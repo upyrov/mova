@@ -5,6 +5,7 @@ pub enum Token {
     Number(String),
     Operator(String),
     Assignment,
+    SpecialCharacter(char),
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
@@ -39,6 +40,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
             '+' | '-' | '*' | '/' => tokens.push(Token::Operator(c.into())),
             '=' => tokens.push(Token::Assignment),
+            '{' | '}' => tokens.push(Token::SpecialCharacter(c)),
             ' ' => continue,
             _ => panic!("Unexpected character found: {}", c),
         }
