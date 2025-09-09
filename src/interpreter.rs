@@ -26,7 +26,6 @@ impl Scope {
     }
 
     pub fn resolve(&self, identifier: &str) -> Data {
-        println!("{:?}", self.locals);
         if let Some(data) = self.locals.get(identifier) {
             return data.clone();
         }

@@ -67,8 +67,34 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Option
     Some(left)
 }
 
+fn parse_block(tokens: &mut Vec<Token>) -> Option<Expression> {
+    match tokens.last()? {
+        Token::SpecialCharacter('{') => {
+            tokens.pop();
+            let mut body = Vec::new();
+
+            loop {
+                match tokens.last()? {
+                    Token::SpecialCharacter('}') => break,
+                    _ => {
+                        if let Some(node) = parse_statement(tokens) {
+                            body.push(node);
+                        }
+                    }
+                }
+            }
+
+            match tokens.pop()? {
+                Token::SpecialCharacter('}') => Some(Expression::Block(body)),
+                _ => panic!("Expected block to be closed"),
+            }
+        }
+        _ => parse_binary_expression(tokens, 0),
+    }
+}
+
 fn parse_expression(tokens: &mut Vec<Token>) -> Option<Expression> {
-    parse_binary_expression(tokens, 0)
+    parse_block(tokens)
 }
 
 fn parse_statement(tokens: &mut Vec<Token>) -> Option<Node> {
