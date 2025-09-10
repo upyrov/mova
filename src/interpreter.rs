@@ -2,10 +2,11 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::parser::{Expression, Node, Statement};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Data {
     Number(i32),
     Tuple(Vec<Data>),
+    Function(Vec<String>, Expression),
 }
 
 pub struct Scope {
@@ -25,13 +26,13 @@ impl Scope {
         self.locals.insert(identifier.into(), data);
     }
 
-    pub fn resolve(&self, identifier: &str) -> Data {
-        if let Some(data) = self.locals.get(identifier) {
-            return data.clone();
+    pub fn resolve(&mut self, identifier: &str) -> Data {
+        if let Some(data) = self.locals.remove(identifier) {
+            return data;
         }
 
         match &self.parent {
-            Some(p) => p.borrow().resolve(identifier).clone(),
+            Some(p) => p.borrow_mut().resolve(identifier),
             None => panic!("Unable to resolve identifier: {}", identifier),
         }
     }
@@ -53,7 +54,7 @@ fn evaluate_binary_expression(operator: String, left: Data, right: Data) -> Data
 pub fn evaluate(node: Node, scope: Option<Rc<RefCell<Scope>>>) -> Option<Data> {
     match node {
         Node::Expression(e) => match e {
-            Expression::Identifier(i) => Some(scope.unwrap().borrow().resolve(&i)),
+            Expression::Identifier(i) => Some(scope.unwrap().borrow_mut().resolve(&i)),
             Expression::Number(n) => Some(Data::Number(n)),
             Expression::BinaryExpression {
                 operator,
@@ -84,18 +85,30 @@ pub fn evaluate(node: Node, scope: Option<Rc<RefCell<Scope>>>) -> Option<Data> {
                     .unwrap_or(Some(Data::Tuple(Vec::new())))
             }
         },
-        Node::Statement(s) => match s {
-            Statement::VariableDeclaration { name, value } => {
-                let data = evaluate(
-                    Node::Expression(*value),
-                    Some(Rc::clone(scope.as_ref().unwrap())),
-                );
-                scope
-                    .unwrap()
-                    .borrow_mut()
-                    .declare(&name, data.expect("Unexpected statement found"));
-                None
+        Node::Statement(s) => {
+            match s {
+                Statement::VariableDeclaration { name, value } => {
+                    let data = evaluate(
+                        Node::Expression(*value),
+                        Some(Rc::clone(scope.as_ref().unwrap())),
+                    );
+                    scope
+                        .unwrap()
+                        .borrow_mut()
+                        .declare(&name, data.expect("Unexpected statement found"));
+                }
+                Statement::Function {
+                    name,
+                    parameters,
+                    body,
+                } => {
+                    scope
+                        .unwrap()
+                        .borrow_mut()
+                        .declare(&name, Data::Function(parameters, body));
+                }
             }
-        },
+            None
+        }
     }
 }
