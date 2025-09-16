@@ -38,9 +38,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 tokens.push(Token::Number(value));
             }
-            '+' | '-' | '*' | '/' => tokens.push(Token::Operator(c.into())),
+            '+' | '-' | '*' | '/' | '(' | ')' => tokens.push(Token::Operator(c.into())),
             '=' => tokens.push(Token::Assignment),
-            '{' | '}' | '(' | ')' => tokens.push(Token::SpecialCharacter(c)),
+            '{' | '}' | ',' => tokens.push(Token::SpecialCharacter(c)),
             ' ' => continue,
             _ => panic!("Unexpected character found: {}", c),
         }
