@@ -235,6 +235,14 @@ fn parse_function(tokens: &mut Vec<Token>) -> Option<Node> {
         _ => panic!("Expected parameter list to be closed"),
     }
 
+    match tokens
+        .pop()
+        .expect("Expected assignment before function body")
+    {
+        Token::Assignment => {}
+        _ => panic!("Expected assignment before function body"),
+    }
+
     let body = parse_block(tokens).expect("Expected function body");
     Some(Node::Statement(Statement::Function {
         name,
