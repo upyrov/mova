@@ -18,6 +18,7 @@ pub enum Expression {
         arguments: Vec<Expression>,
     },
     Block(Vec<Node>),
+    Program(Vec<Node>),
 }
 
 #[derive(Debug)]
@@ -255,11 +256,11 @@ fn parse_statement(tokens: &mut Vec<Token>) -> Option<Node> {
 
 pub fn parse(mut tokens: Vec<Token>) -> Node {
     tokens.reverse();
-    let mut program = Vec::new();
+    let mut body = Vec::new();
 
     while let Some(node) = parse_statement(&mut tokens) {
-        program.push(node);
+        body.push(node);
     }
 
-    Node::Expression(Expression::Block(program))
+    Node::Expression(Expression::Program(body))
 }
