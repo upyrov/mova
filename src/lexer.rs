@@ -14,11 +14,13 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     let mut input = input.chars().peekable();
     while let Some(c) = input.next() {
         match c {
-            'a'..='z' => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 let mut value = String::from(c);
                 while let Some(l) = input.peek() {
                     match l {
-                        'a'..='z' => value += &input.next().unwrap().to_string(),
+                        'a'..='z' | 'A'..='Z' | '_' | '0'..='9' => {
+                            value += &input.next().unwrap().to_string()
+                        }
                         _ => break,
                     }
                 }
