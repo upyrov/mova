@@ -9,6 +9,7 @@ pub enum Data {
     Function(Vec<String>, Expression),
 }
 
+#[derive(Debug)]
 pub struct Scope {
     parent: Option<Rc<RefCell<Scope>>>,
     locals: HashMap<String, Data>,
