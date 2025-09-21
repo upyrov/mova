@@ -57,83 +57,92 @@ fn evaluate_binary_expression(operator: String, left: Data, right: Data) -> Data
     }
 }
 
+fn evaluate_call(
+    scope: Rc<RefCell<Scope>>,
+    name: &str,
+    arguments: Vec<Expression>,
+) -> Option<Data> {
+    match scope.borrow_mut().resolve(name) {
+        Data::Function(parameters, body) => {
+            let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
+
+            // Map arguments to parameters
+            arguments
+                .into_iter()
+                .zip(parameters.iter())
+                .for_each(|(argument, parameter)| {
+                    let data = evaluate(Node::Expression(argument), Rc::clone(&child_scope))
+                        .expect("Unexpected statement found");
+                    child_scope.borrow_mut().declare(&parameter, data);
+                });
+
+            evaluate(Node::Expression(body), Rc::clone(&child_scope))
+        }
+        _ => panic!("Unable to call non-function data"),
+    }
+}
+
+fn evaluate_expression(expression: Expression, scope: Rc<RefCell<Scope>>) -> Option<Data> {
+    match expression {
+        Expression::Identifier(i) => Some(scope.borrow_mut().resolve(&i)),
+        Expression::Number(n) => Some(Data::Number(n)),
+        Expression::UnaryExpression { operator, value } => {
+            let value =
+                evaluate(Node::Expression(*value), scope).expect("Unexpected statement found");
+            Some(evaluate_unary_expression(operator, value))
+        }
+        Expression::BinaryExpression {
+            operator,
+            left,
+            right,
+        } => {
+            let left = evaluate(Node::Expression(*left), Rc::clone(&scope))
+                .expect("Unexpected statement found");
+            let right = evaluate(Node::Expression(*right), Rc::clone(&scope))
+                .expect("Unexpected statement found");
+            Some(evaluate_binary_expression(operator, left, right))
+        }
+        Expression::Call { name, arguments } => evaluate_call(scope, &name, arguments),
+        Expression::Block(b) => {
+            let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
+            b.into_iter()
+                .map(move |n| evaluate(n, Rc::clone(&child_scope)))
+                .last()
+                .unwrap_or(Some(Data::Tuple(Vec::new())))
+        }
+        Expression::Program(p) => p
+            .into_iter()
+            .map(move |n| evaluate(n, Rc::clone(&scope)))
+            .last()
+            .unwrap_or(Some(Data::Tuple(Vec::new()))),
+    }
+}
+
+fn evaluate_statement(statement: Statement, scope: Rc<RefCell<Scope>>) {
+    match statement {
+        Statement::VariableDeclaration { name, value } => {
+            let data = evaluate(Node::Expression(*value), Rc::clone(&scope));
+            scope
+                .borrow_mut()
+                .declare(&name, data.expect("Unexpected statement found"));
+        }
+        Statement::Function {
+            name,
+            parameters,
+            body,
+        } => {
+            scope
+                .borrow_mut()
+                .declare(&name, Data::Function(parameters, body));
+        }
+    }
+}
+
 pub fn evaluate(node: Node, scope: Rc<RefCell<Scope>>) -> Option<Data> {
     match node {
-        Node::Expression(e) => match e {
-            Expression::Identifier(i) => Some(scope.borrow_mut().resolve(&i)),
-            Expression::Number(n) => Some(Data::Number(n)),
-            Expression::UnaryExpression { operator, value } => {
-                let value = evaluate(Node::Expression(*value), Rc::clone(&scope));
-                Some(evaluate_unary_expression(
-                    operator,
-                    value.expect("Unexpected statement found"),
-                ))
-            }
-            Expression::BinaryExpression {
-                operator,
-                left,
-                right,
-            } => {
-                let left = evaluate(Node::Expression(*left), Rc::clone(&scope));
-                let right = evaluate(Node::Expression(*right), Rc::clone(&scope));
-                Some(evaluate_binary_expression(
-                    operator,
-                    left.expect("Unexpected statement found"),
-                    right.expect("Unexpected statement found"),
-                ))
-            }
-            Expression::Call { name, arguments } => {
-                match scope.borrow_mut().resolve(&name) {
-                    Data::Function(parameters, body) => {
-                        let child_scope =
-                            Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
-
-                        // Map arguments to parameters
-                        arguments.into_iter().zip(parameters.iter()).for_each(
-                            |(argument, parameter)| {
-                                let data =
-                                    evaluate(Node::Expression(argument), Rc::clone(&child_scope))
-                                        .expect("Unexpected statement found");
-                                child_scope.borrow_mut().declare(&parameter, data);
-                            },
-                        );
-
-                        evaluate(Node::Expression(body), Rc::clone(&child_scope))
-                    }
-                    _ => panic!("Unable to call non-function data"),
-                }
-            }
-            Expression::Block(b) => {
-                let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
-                b.into_iter()
-                    .map(move |n| evaluate(n, Rc::clone(&child_scope)))
-                    .last()
-                    .unwrap_or(Some(Data::Tuple(Vec::new())))
-            }
-            Expression::Program(p) => p
-                .into_iter()
-                .map(move |n| evaluate(n, Rc::clone(&scope)))
-                .last()
-                .unwrap_or(Some(Data::Tuple(Vec::new()))),
-        },
+        Node::Expression(e) => evaluate_expression(e, scope),
         Node::Statement(s) => {
-            match s {
-                Statement::VariableDeclaration { name, value } => {
-                    let data = evaluate(Node::Expression(*value), Rc::clone(&scope));
-                    scope
-                        .borrow_mut()
-                        .declare(&name, data.expect("Unexpected statement found"));
-                }
-                Statement::Function {
-                    name,
-                    parameters,
-                    body,
-                } => {
-                    scope
-                        .borrow_mut()
-                        .declare(&name, Data::Function(parameters, body));
-                }
-            }
+            evaluate_statement(s, scope);
             None
         }
     }
