@@ -62,17 +62,19 @@ fn evaluate_call(
     name: &str,
     arguments: Vec<Expression>,
 ) -> Option<Data> {
-    match scope.borrow_mut().resolve(name) {
+    let function_data = scope.borrow_mut().resolve(&name);
+    match function_data {
         Data::Function(parameters, body) => {
             let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
+            let evaluated_arguments = arguments.into_iter().map(|argument| {
+                evaluate(Node::Expression(argument), Rc::clone(&scope))
+                    .expect("Unexpected statement found")
+            });
 
             // Map arguments to parameters
-            arguments
-                .into_iter()
+            evaluated_arguments
                 .zip(parameters.iter())
-                .for_each(|(argument, parameter)| {
-                    let data = evaluate(Node::Expression(argument), Rc::clone(&child_scope))
-                        .expect("Unexpected statement found");
+                .for_each(|(data, parameter)| {
                     child_scope.borrow_mut().declare(&parameter, data);
                 });
 
