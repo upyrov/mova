@@ -165,7 +165,7 @@ fn parse_block(tokens: &mut Vec<Token>) -> Option<Expression> {
                 }
             }
 
-            match tokens.pop()? {
+            match tokens.pop().expect("Expected block to be closed") {
                 Token::SpecialCharacter('}') => Some(Expression::Block(body)),
                 _ => panic!("Expected block to be closed"),
             }
@@ -181,12 +181,15 @@ fn parse_expression(tokens: &mut Vec<Token>) -> Option<Expression> {
 fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Option<Node> {
     tokens.pop();
 
-    let name = match tokens.pop()? {
+    let name = match tokens
+        .pop()
+        .expect("Expected identifier after `let` keyword")
+    {
         Token::Identifier(i) => i,
         t => panic!("Expected identifier but got: {:?}", t),
     };
 
-    match tokens.pop()? {
+    match tokens.pop().expect("Expected assignmnet after identifier") {
         Token::Assignment => {
             let value = Box::new(parse_expression(tokens).expect("Unexpected statement found"));
             Some(Node::Statement(Statement::VariableDeclaration {
