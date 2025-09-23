@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::*;
+use crate::{interpreter::*, lexer::tokenize, parser::parse};
 
-pub fn run(input: &str) -> Option<interpreter::Data> {
-    let tokens = lexer::tokenize(input);
-    let ast = parser::parse(tokens);
-    interpreter::evaluate(ast, Rc::new(RefCell::new(interpreter::Scope::new(None))))
+pub fn run(input: &str) -> Option<Data> {
+    let tokens = tokenize(input);
+    let program = parse(tokens);
+    evaluate(program, Rc::new(RefCell::new(Scope::new(None))))
 }

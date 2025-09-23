@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::parser::{Expression, Node, Statement};
+use crate::parser::{expression::Expression, node::Node, statement::Statement};
 
 #[derive(Debug)]
 pub enum Data {
