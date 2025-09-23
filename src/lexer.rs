@@ -13,6 +13,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
     let mut input = input.chars().peekable();
     while let Some(c) = input.next() {
+        if c.is_whitespace() {
+            continue;
+        }
+
         match c {
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut value = String::from(c);
@@ -43,7 +47,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             '+' | '-' | '*' | '/' | '(' | ')' => tokens.push(Token::Operator(c.into())),
             '=' => tokens.push(Token::Assignment),
             '{' | '}' | ',' => tokens.push(Token::SpecialCharacter(c)),
-            ' ' => continue,
             _ => panic!("Unexpected character found: {}", c),
         }
     }
