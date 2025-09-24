@@ -28,8 +28,11 @@ impl Scope {
     }
 
     pub fn resolve(&mut self, identifier: &str) -> Data {
-        if let Some(data) = self.locals.remove(identifier) {
-            return data;
+        if let Some(l) = self.locals.get(identifier) {
+            return match l {
+                Data::Number(n) => Data::Number(*n),
+                _ => self.locals.remove(identifier).unwrap(),
+            };
         }
 
         match &self.parent {

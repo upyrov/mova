@@ -18,6 +18,16 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
 
         match c {
+            '/' => if let Some('/') = input.peek() {
+                input.next();
+                while let Some(n) = input.next() {
+                    if n == '\n' {
+                        break;
+                    }
+                }
+            } else {
+                tokens.push(Token::Operator(c.into()));
+            },
             'a'..='z' | 'A'..='Z' | '_' => {
                 let mut value = String::from(c);
                 while let Some(l) = input.peek() {
@@ -44,7 +54,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 tokens.push(Token::Number(value));
             }
-            '+' | '-' | '*' | '/' | '(' | ')' => tokens.push(Token::Operator(c.into())),
+            '+' | '-' | '*' | '(' | ')' => tokens.push(Token::Operator(c.into())),
             '=' => tokens.push(Token::Assignment),
             '{' | '}' | ',' => tokens.push(Token::SpecialCharacter(c)),
             _ => panic!("Unexpected character found: {}", c),
@@ -103,5 +113,13 @@ mod tests {
     #[test]
     fn it_tokenizes_assignment() {
         assert_eq!(tokenize("="), vec![Token::Assignment]);
+    }
+
+    #[test]
+    fn it_skips_comment() {
+        assert_eq!(
+            tokenize("1 // comment here\n2"),
+            vec![Token::Number("1".into()), Token::Number("2".into())]
+        );
     }
 }
