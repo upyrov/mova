@@ -8,7 +8,7 @@ Here is an example to get you started:
 
 ```
 let number = 123
-fn add_four(x) = x + 4
+fn add_four(x) = x + 4 // adds four
 add_four(number)
 ```
 
