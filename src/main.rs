@@ -7,8 +7,24 @@ fn main() {
     let paths = &args[1..];
 
     paths.into_iter().for_each(|path| {
-        let input = fs::read_to_string(path).expect("Unable to read file");
-        let result = run(&input);
-        println!("{:?}", result);
+        let input = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!("Error reading file {path}: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        match run(&input) {
+            Ok(result) => {
+                if let Some(data) = result {
+                    println!("{:?}", data);
+                }
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
     });
 }
