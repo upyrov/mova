@@ -7,11 +7,14 @@ An interpreted language designed around ownership and safe memory management, ye
 Here is an example to get you started:
 
 ```
-let number = 123
-fn add_four(x) = x + 4 // adds four
-add_four(number)
+let x = 123
+let y = 111
+
+fn add_two_numbers(x, y) = x + y // adds four
+
+add_two_numbers(x, y) // returns 234
 ```
 
 ## License
 
-Mova is distributed under the terms of [MIT license](./LICENSE).
+Mova is distributed under the terms of [MIT License](./LICENSE).
