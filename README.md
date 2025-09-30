@@ -1,6 +1,6 @@
 # Mova
 
-An interpreted language designed around ownership and safe memory management, yet easy to use.
+An interpreted language designed around ownership memory management model.
 
 ## Examples
 
