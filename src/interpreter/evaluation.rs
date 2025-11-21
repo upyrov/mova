@@ -115,6 +115,7 @@ fn evaluate_expression(
     match &*expression {
         Expression::Identifier(i) => Ok(Some(borrow_scope(&scope)?.resolve(&i)?)),
         Expression::Number(n) => Ok(Some(Data::Number(*n))),
+        Expression::Boolean(b) => Ok(Some(Data::Boolean(*b))),
         Expression::Reference(r) => {
             let mut s = borrow_scope(&scope)?;
             let found_scope = s.find_scope_by_identifier(Rc::clone(&scope), &r)?;
