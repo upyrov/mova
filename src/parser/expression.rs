@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     error::{MovaError, Result},
     lexer::Token,
@@ -6,28 +8,33 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum Expression {
-    Identifier(String),
     Number(i32),
-    UnaryExpression {
-        operator: String,
-        value: Box<Expression>,
-    },
+    Identifier(Rc<String>),
+    Reference(Rc<String>),
     BinaryExpression {
-        operator: String,
-        left: Box<Expression>,
-        right: Box<Expression>,
+        operator: Rc<String>,
+        left: Rc<Expression>,
+        right: Rc<Expression>,
     },
     Call {
-        name: String,
-        arguments: Vec<Expression>,
+        name: Rc<String>,
+        arguments: Rc<[Expression]>,
     },
-    Block(Vec<Node>),
-    Program(Vec<Node>),
+    Block(Rc<[Node]>),
+    Program(Rc<[Node]>),
+}
+
+fn get_infix_binding_power(operator: &str) -> Option<(u8, u8)> {
+    match operator {
+        "+" | "-" => Some((3, 4)),
+        "*" | "/" => Some((5, 6)),
+        _ => None,
+    }
 }
 
 fn get_postfix_binding_power(operator: &str) -> Option<(u8, ())> {
     match operator {
-        "(" => Some((6, ())),
+        "(" | "&" => Some((2, ())),
         _ => None,
     }
 }
@@ -75,35 +82,23 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
     match left {
         Expression::Identifier(i) => Ok(Expression::Call {
             name: i,
-            arguments: parameters,
+            arguments: parameters.into(),
         }),
         e => Err(MovaError::Parser(format!(
-            "Expected identifier to be called but found {:?}",
-            e
+            "Expected identifier to be called but found {e:?}"
         ))),
-    }
-}
-
-fn get_infix_binding_power(operator: &str) -> Option<(u8, u8)> {
-    match operator {
-        "+" | "-" => Some((1, 2)),
-        "*" | "/" => Some((3, 4)),
-        _ => None,
     }
 }
 
 fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result<Expression> {
     let mut left = match tokens.pop() {
+        Some(Token::Identifier(i)) => Expression::Identifier(Rc::new(i)),
         Some(Token::Number(n)) => Expression::Number(
             n.parse()
                 .map_err(|_| MovaError::Parser(format!("Invalid number: {n}")))?,
         ),
-        Some(Token::Identifier(i)) => Expression::Identifier(i),
         Some(t) => {
-            return Err(MovaError::Parser(format!(
-                "Unexpected token found: {:?}",
-                t
-            )));
+            return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));
         }
         None => {
             return Err(MovaError::Parser("Unexpected end of input".into()));
@@ -120,10 +115,22 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
 
                     left = match o.as_str() {
                         "(" => parse_call(tokens, left)?,
-                        _ => Expression::UnaryExpression {
-                            operator: o,
-                            value: Box::new(parse_expression(tokens)?),
+                        "&" => match left {
+                            Expression::Identifier(i) => {
+                                tokens.pop();
+                                Expression::Reference(Rc::clone(&i))
+                            }
+                            t => {
+                                return Err(MovaError::Parser(format!(
+                                    "Unexpected token found: {t:?}"
+                                )));
+                            }
                         },
+                        t => {
+                            return Err(MovaError::Parser(format!(
+                                "Unexpected operator found: {t:?}"
+                            )));
+                        }
                     };
                     continue;
                 }
@@ -134,11 +141,11 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     }
 
                     tokens.pop();
-                    let right = Box::new(parse_binary_expression(tokens, rbp)?);
+                    let right = Rc::new(parse_binary_expression(tokens, rbp)?);
                     left = Expression::BinaryExpression {
-                        left: Box::new(left),
+                        left: Rc::new(left),
                         right,
-                        operator: o,
+                        operator: Rc::new(o),
                     };
                     continue;
                 }
@@ -177,7 +184,7 @@ fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
                 }
 
                 match tokens.pop() {
-                    Some(Token::SpecialCharacter('}')) => Ok(Expression::Block(body)),
+                    Some(Token::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
                     _ => Err(MovaError::Parser("Expected block to be closed".into())),
                 }
             }

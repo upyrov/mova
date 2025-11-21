@@ -18,7 +18,7 @@ fn main() {
         match run(&input) {
             Ok(result) => {
                 if let Some(data) = result {
-                    println!("{:?}", data);
+                    println!("{data:?}");
                 }
             }
             Err(e) => {
