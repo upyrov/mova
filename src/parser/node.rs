@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     error::Result,
     lexer::Token,
@@ -6,8 +8,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum Node {
-    Expression(Expression),
-    Statement(Statement),
+    Expression(Rc<Expression>),
+    Statement(Rc<Statement>),
 }
 
 pub fn parse(mut tokens: Vec<Token>) -> Result<Node> {
@@ -18,5 +20,5 @@ pub fn parse(mut tokens: Vec<Token>) -> Result<Node> {
         body.push(parse_statement(&mut tokens)?);
     }
 
-    Ok(Node::Expression(Expression::Program(body)))
+    Ok(Node::Expression(Rc::new(Expression::Program(body.into()))))
 }
