@@ -8,7 +8,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum Statement {
-    VariableDeclaration {
+    Variable {
         name: Rc<String>,
         value: Rc<Expression>,
     },
@@ -19,7 +19,7 @@ pub enum Statement {
     },
 }
 
-fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Result<Node> {
+fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
     tokens.pop();
 
     let name = Rc::new(match tokens.pop() {
@@ -39,7 +39,7 @@ fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Result<Node> {
     match tokens.pop() {
         Some(Token::Assignment) => {
             let value = Rc::new(parse_expression(tokens)?);
-            Ok(Node::Statement(Rc::new(Statement::VariableDeclaration {
+            Ok(Node::Statement(Rc::new(Statement::Variable {
                 name,
                 value,
             })))
@@ -120,7 +120,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
 pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
     match tokens.last() {
         Some(Token::Keyword(k)) => match k.as_str() {
-            "let" => parse_variable_declaration(tokens),
+            "let" => parse_variable(tokens),
             "fn" => parse_function(tokens),
             k => Err(MovaError::Parser(format!("Unexpected keyword found: {k}",))),
         },
