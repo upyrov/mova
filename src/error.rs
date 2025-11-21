@@ -1,12 +1,12 @@
 use std::fmt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Position {
     pub line: usize,
     pub character: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum MovaError {
     Lexer { message: String, position: Position },
     Parser(String),
