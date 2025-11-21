@@ -13,6 +13,7 @@ pub struct Reference {
 #[derive(Clone, Debug)]
 pub enum Data {
     Number(i32),
+    Boolean(bool),
     Function {
         parameters: Rc<[String]>,
         body: Rc<Expression>,

@@ -9,6 +9,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum Expression {
     Number(i32),
+    Boolean(bool),
     Identifier(Rc<String>),
     Reference(Rc<String>),
     BinaryExpression {
@@ -97,6 +98,7 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
             n.parse()
                 .map_err(|_| MovaError::Parser(format!("Invalid number: {n}")))?,
         ),
+        Some(Token::Boolean(b)) => Expression::Boolean(b),
         Some(t) => {
             return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));
         }
