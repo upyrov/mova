@@ -17,7 +17,7 @@ pub enum Data {
     Function {
         parameters: Rc<[String]>,
         body: Rc<Expression>,
-        scope: Rc<RefCell<Scope>>,
+        body_scope: Rc<RefCell<Scope>>,
     },
     Reference(Rc<Reference>),
 }

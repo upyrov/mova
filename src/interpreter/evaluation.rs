@@ -42,7 +42,7 @@ fn evaluate_call(
         Data::Function {
             parameters,
             body,
-            scope,
+            body_scope,
         } => {
             let argument_count = arguments.len();
             let parameter_count = parameters.len();
@@ -59,8 +59,8 @@ fn evaluate_call(
                     let node = Rc::new(Node::Expression(Rc::new(argument.clone())));
                     let data = evaluate(node, Rc::clone(&scope))?.ok_or(MovaError::Runtime(
                         "Expected expression, but received statement as argument".into(),
-                    ));
-                    match data.clone()? {
+                    ))?;
+                    match data {
                         Data::Reference(r) => {
                             let mut s = borrow_scope(&scope)?;
                             let found_scope =
@@ -73,17 +73,17 @@ fn evaluate_call(
                                 scope: found_scope,
                                 value: Rc::clone(&value),
                             };
-                            s.borrow(reference);
+                            borrow_scope(&body_scope)?.borrow(reference);
 
                             Ok(referenced_value)
                         }
-                        _ => data,
+                        _ => Ok(data),
                     }
                 })
                 .collect::<Vec<_>>();
 
             {
-                let mut s = borrow_scope(&scope)?;
+                let mut s = borrow_scope(&body_scope)?;
 
                 // Map arguments to parameters
                 evaluated_arguments
@@ -97,9 +97,9 @@ fn evaluate_call(
 
             let result = evaluate(
                 Rc::new(Node::Expression(Rc::clone(&body))),
-                Rc::clone(&scope),
+                Rc::clone(&body_scope),
             );
-            borrow_scope(&scope)?.return_references()?;
+            borrow_scope(&body_scope)?.return_references()?;
             result
         }
         _ => Err(MovaError::Runtime(format!(
@@ -193,7 +193,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             Data::Function {
                 parameters: Rc::clone(parameters),
                 body: Rc::clone(body),
-                scope: Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope))))),
+                body_scope: Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope))))),
             },
         ),
     }
