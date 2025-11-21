@@ -173,7 +173,7 @@ fn evaluate_expression(
 
 fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Result<()> {
     match &*statement {
-        Statement::VariableDeclaration { name, value } => {
+        Statement::Variable { name, value } => {
             let data = evaluate(
                 Rc::new(Node::Expression(Rc::clone(value))),
                 Rc::clone(&scope),

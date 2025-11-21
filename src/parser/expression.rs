@@ -8,8 +8,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum Expression {
-    Identifier(Rc<String>),
     Number(i32),
+    Identifier(Rc<String>),
     Reference(Rc<String>),
     BinaryExpression {
         operator: Rc<String>,
