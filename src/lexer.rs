@@ -67,12 +67,12 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                 }
                 tokens.push(Token::Number(value));
             }
-            '+' | '-' | '*' | '(' | ')' => tokens.push(Token::Operator(c.into())),
+            '+' | '-' | '*' | '(' | ')' | '&' => tokens.push(Token::Operator(c.into())),
             '=' => tokens.push(Token::Assignment),
             '{' | '}' | ',' => tokens.push(Token::SpecialCharacter(c)),
             _ => {
                 return Err(MovaError::Lexer {
-                    message: format!("Unexpected character: '{}'", c),
+                    message: format!("Unexpected character: '{c}'",),
                     position: Position { line, character: i },
                 });
             }

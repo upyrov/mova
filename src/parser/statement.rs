@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     error::{MovaError, Result},
     lexer::Token,
@@ -7,25 +9,24 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum Statement {
     VariableDeclaration {
-        name: String,
-        value: Box<Expression>,
+        name: Rc<String>,
+        value: Rc<Expression>,
     },
     Function {
-        name: String,
-        parameters: Vec<String>,
-        body: Expression,
+        name: Rc<String>,
+        parameters: Rc<[String]>,
+        body: Rc<Expression>,
     },
 }
 
 fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Result<Node> {
     tokens.pop();
 
-    let name = match tokens.pop() {
+    let name = Rc::new(match tokens.pop() {
         Some(Token::Identifier(i)) => i,
         Some(t) => {
             return Err(MovaError::Parser(format!(
-                "Expected identifier but got: {:?}",
-                t
+                "Expected identifier but got: {t:?}"
             )));
         }
         None => {
@@ -33,20 +34,17 @@ fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Result<Node> {
                 "Expected identifier after `let` keyword".into(),
             ));
         }
-    };
+    });
 
     match tokens.pop() {
         Some(Token::Assignment) => {
-            let value = Box::new(parse_expression(tokens)?);
-            Ok(Node::Statement(Statement::VariableDeclaration {
+            let value = Rc::new(parse_expression(tokens)?);
+            Ok(Node::Statement(Rc::new(Statement::VariableDeclaration {
                 name,
                 value,
-            }))
+            })))
         }
-        Some(t) => Err(MovaError::Parser(format!(
-            "Unexpected token found: {:?}",
-            t
-        ))),
+        Some(t) => Err(MovaError::Parser(format!("Unexpected token found: {t:?}"))),
         None => Err(MovaError::Parser(
             "Expected assignment after identifier".into(),
         )),
@@ -56,14 +54,14 @@ fn parse_variable_declaration(tokens: &mut Vec<Token>) -> Result<Node> {
 fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
     tokens.pop();
 
-    let name = match tokens.pop() {
+    let name = Rc::new(match tokens.pop() {
         Some(Token::Identifier(i)) => i,
         _ => {
             return Err(MovaError::Parser(
                 "Expected function name after `fn` keyword".into(),
             ));
         }
-    };
+    });
     match tokens.pop() {
         Some(Token::Operator(o)) if o == "(" => {}
         _ => {
@@ -112,12 +110,11 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
         }
     }
 
-    let body = parse_expression(tokens)?;
-    Ok(Node::Statement(Statement::Function {
+    Ok(Node::Statement(Rc::new(Statement::Function {
         name,
-        parameters,
-        body,
-    }))
+        parameters: parameters.into(),
+        body: Rc::new(parse_expression(tokens)?),
+    })))
 }
 
 pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
@@ -127,7 +124,7 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
             "fn" => parse_function(tokens),
             k => Err(MovaError::Parser(format!("Unexpected keyword found: {k}",))),
         },
-        Some(_) => parse_expression(tokens).map(|t| Node::Expression(t)),
+        Some(_) => parse_expression(tokens).map(|t| Node::Expression(Rc::new(t))),
         None => Err(MovaError::Parser("Unexpected end of input".into())),
     }
 }
