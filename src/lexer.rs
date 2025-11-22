@@ -5,6 +5,7 @@ pub enum Token {
     Keyword(String),
     Identifier(String),
     Number(String),
+    Boolean(bool),
     Operator(String),
     Assignment,
     SpecialCharacter(char),
@@ -50,6 +51,8 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                 }
                 let token = match value.as_str() {
                     "let" | "fn" => Token::Keyword(value),
+                    "true" => Token::Boolean(true),
+                    "false" => Token::Boolean(false),
                     _ => Token::Identifier(value),
                 };
                 tokens.push(token);
