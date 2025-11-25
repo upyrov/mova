@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use mova::runner::run;
+use mova::{interpreter::Value, runner::run};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,8 +17,16 @@ fn main() {
 
         match run(&input) {
             Ok(result) => {
-                if let Some(data) = result {
-                    println!("{data:?}");
+                if let Some(value) = result {
+                    match value {
+                        Value::Reference(r) => {
+                            let guard = r.read();
+                            match &guard.value {
+                                value => println!("{value:?}"),
+                            }
+                        }
+                        _ => println!("{value:?}"),
+                    }
                 }
             }
             Err(e) => {

@@ -2,21 +2,20 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     error::{MovaError, Result},
-    interpreter::{data::Data, scope::Scope},
+    interpreter::{data::Value, scope::Scope},
     parser::{expression::Expression, node::Node, statement::Statement},
 };
 
-fn evaluate_binary_expression(operator: &str, left: Data, right: Data) -> Result<Data> {
+fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Result<Value> {
     match (operator, left, right) {
-        ("+", Data::Number(l), Data::Number(r)) => Ok(Data::Number(l + r)),
-        ("-", Data::Number(l), Data::Number(r)) => Ok(Data::Number(l - r)),
-        ("*", Data::Number(l), Data::Number(r)) => Ok(Data::Number(l * r)),
-        ("/", Data::Number(l), Data::Number(r)) => {
+        ("+", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
+        ("-", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l - r)),
+        ("*", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
+        ("/", Value::Number(l), Value::Number(r)) => {
             if r == 0 {
-                Err(MovaError::Runtime("Division by zero".into()))
-            } else {
-                Ok(Data::Number(l / r))
+                return Err(MovaError::Runtime("Division by zero".into()));
             }
+            Ok(Value::Number(l / r))
         }
         (o, l, r) => Err(MovaError::Runtime(format!(
             "Unexpected operator '{o}' for operands '{l:?}' and '{r:?}'",
@@ -28,37 +27,35 @@ fn evaluate_call(
     scope: Rc<RefCell<Scope>>,
     name: &str,
     arguments: Rc<[Expression]>,
-) -> Result<Option<Data>> {
+) -> Result<Option<Value>> {
     // Drop immediately after use so that recursive calls don't panic
-    let function_data = { scope.borrow_mut().resolve(name)? };
-
-    match function_data {
-        Data::Function {
+    let callee = { scope.borrow_mut().resolve(name)? };
+    match callee {
+        Value::Function {
             parameters,
             body,
             definition_scope,
         } => {
             let argument_count = arguments.len();
             let parameter_count = parameters.len();
-
             if argument_count != parameter_count {
                 return Err(MovaError::Runtime(format!(
                     "Expected {parameter_count} arguments but received {argument_count}",
                 )));
             }
 
-            let evaluated_arguments: Vec<Data> = arguments
+            let evaluated_arguments: Vec<Value> = arguments
                 .iter()
                 .map(|argument| {
                     let node = Rc::new(Node::Expression(Rc::new(argument.clone())));
-                    let data = evaluate(node, Rc::clone(&scope))?.ok_or(MovaError::Runtime(
+                    let value = evaluate(node, Rc::clone(&scope))?.ok_or(MovaError::Runtime(
                         "Expected expression, but received statement as argument".into(),
                     ))?;
-                    Ok(data)
+                    Ok(value)
                 })
-                .collect::<Result<Vec<Data>>>()?;
+                .collect::<Result<Vec<Value>>>()?;
 
-            // Avoid interfering with other calls
+            // Create execution scope in order to avoid interfering with other calls
             let execution_scope =
                 Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&definition_scope)))));
             {
@@ -68,7 +65,7 @@ fn evaluate_call(
                 evaluated_arguments
                     .into_iter()
                     .zip(parameters.iter())
-                    .for_each(|(data, parameter)| s.declare(parameter, data));
+                    .for_each(|(value, parameter)| s.declare(parameter, value, false));
             }
 
             evaluate(Rc::new(Node::Expression(Rc::clone(&body))), execution_scope)
@@ -80,17 +77,19 @@ fn evaluate_call(
 fn evaluate_expression(
     expression: Rc<Expression>,
     scope: Rc<RefCell<Scope>>,
-) -> Result<Option<Data>> {
+) -> Result<Option<Value>> {
     match &*expression {
-        Expression::Number(n) => Ok(Some(Data::Number(*n))),
-        Expression::Boolean(b) => Ok(Some(Data::Boolean(*b))),
+        Expression::Number(n) => Ok(Some(Value::Number(*n))),
+        Expression::Boolean(b) => Ok(Some(Value::Boolean(*b))),
         Expression::Identifier(i) => Ok(Some(scope.borrow_mut().resolve(i)?)),
-        Expression::Reference(r) => {
-            let reference = scope.borrow_mut().borrow(r)?;
-            match reference {
-                Data::Reference(r) => Ok(Some(r.value())),
-                _ => unreachable!(),
-            }
+        Expression::Reference { name, is_mutable } => {
+            let mut env = scope.borrow_mut();
+            let value = if *is_mutable {
+                env.borrow_mut(name)?
+            } else {
+                env.borrow(name)?
+            };
+            Ok(Some(value))
         }
         Expression::BinaryExpression {
             operator,
@@ -120,7 +119,6 @@ fn evaluate_expression(
             let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
             let mut result = None;
             for node in b.into_iter() {
-                drop(result);
                 result = evaluate(Rc::new(node.clone()), Rc::clone(&child_scope))?;
             }
             Ok(result)
@@ -128,7 +126,6 @@ fn evaluate_expression(
         Expression::Program(p) => {
             let mut result = None;
             for node in p.into_iter() {
-                drop(result);
                 result = evaluate(Rc::new(node.clone()), Rc::clone(&scope))?;
             }
             Ok(result)
@@ -138,33 +135,37 @@ fn evaluate_expression(
 
 fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Result<()> {
     match &*statement {
-        Statement::Variable { name, value } => {
-            let data = evaluate(
+        Statement::Variable {
+            name,
+            value,
+            is_mutable,
+        } => {
+            let value = evaluate(
                 Rc::new(Node::Expression(Rc::clone(value))),
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
                 "Expected expression, but received statement as value".into(),
             ))?;
-            scope.borrow_mut().declare(&name, data);
+            scope.borrow_mut().declare(&name, value, *is_mutable);
         }
         Statement::Function {
             name,
             parameters,
             body,
         } => {
-            let function = Data::Function {
+            let function = Value::Function {
                 parameters: Rc::clone(parameters),
                 body: Rc::clone(body),
                 definition_scope: Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope))))),
             };
-            scope.borrow_mut().declare(&name, function);
+            scope.borrow_mut().declare(&name, function, false);
         }
     }
     Ok(())
 }
 
-pub fn evaluate(node: Rc<Node>, scope: Rc<RefCell<Scope>>) -> Result<Option<Data>> {
+pub fn evaluate(node: Rc<Node>, scope: Rc<RefCell<Scope>>) -> Result<Option<Value>> {
     match &*node {
         Node::Expression(e) => evaluate_expression(Rc::clone(e), scope),
         Node::Statement(s) => {
