@@ -11,6 +11,7 @@ pub enum Statement {
     Variable {
         name: Rc<String>,
         value: Rc<Expression>,
+        is_mutable: bool,
     },
     Function {
         name: Rc<String>,
@@ -21,6 +22,11 @@ pub enum Statement {
 
 fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
     tokens.pop();
+
+    let is_mutable = matches!(tokens.last(), Some(Token::Keyword(k)) if k == "mut");
+    if is_mutable {
+        tokens.pop();
+    }
 
     let name = Rc::new(match tokens.pop() {
         Some(Token::Identifier(i)) => i,
@@ -42,6 +48,7 @@ fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
             Ok(Node::Statement(Rc::new(Statement::Variable {
                 name,
                 value,
+                is_mutable,
             })))
         }
         Some(t) => Err(MovaError::Parser(format!("Unexpected token found: {t:?}"))),

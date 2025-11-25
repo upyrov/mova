@@ -11,7 +11,10 @@ pub enum Expression {
     Number(i32),
     Boolean(bool),
     Identifier(Rc<String>),
-    Reference(Rc<String>),
+    Reference {
+        name: Rc<String>,
+        is_mutable: bool,
+    },
     BinaryExpression {
         operator: Rc<String>,
         left: Rc<Expression>,
@@ -120,7 +123,15 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                         "&" => match left {
                             Expression::Identifier(i) => {
                                 tokens.pop();
-                                Expression::Reference(Rc::clone(&i))
+                                let is_mutable =
+                                    matches!(tokens.last(), Some(Token::Keyword(k)) if k == "mut");
+                                if is_mutable {
+                                    tokens.pop();
+                                }
+                                Expression::Reference {
+                                    name: Rc::clone(&i),
+                                    is_mutable,
+                                }
                             }
                             t => {
                                 return Err(MovaError::Parser(format!(
@@ -172,12 +183,7 @@ fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
                     match tokens.last() {
                         Some(token) => match token {
                             Token::SpecialCharacter('}') => break,
-                            _ => {
-                                let result = parse_statement(tokens)?;
-                                if let Node::Expression(_) = &result {
-                                    body.push(result);
-                                }
-                            }
+                            _ => body.push(parse_statement(tokens)?),
                         },
                         None => {
                             return Err(MovaError::Parser("Expected block to be closed".into()));
