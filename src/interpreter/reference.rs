@@ -12,11 +12,11 @@ pub struct Reference {
 }
 
 impl Reference {
-    pub fn read(&self) -> Ref<Data> {
+    pub fn read(&self) -> Ref<'_, Data> {
         self.slot.borrow()
     }
 
-    pub fn write(&self) -> Result<RefMut<Data>> {
+    pub fn write(&self) -> Result<RefMut<'_, Data>> {
         if self.is_mutable {
             return Ok(self.slot.borrow_mut());
         }

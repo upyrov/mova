@@ -13,6 +13,10 @@ pub enum Statement {
         value: Rc<Expression>,
         is_mutable: bool,
     },
+    Assignment {
+        name: Rc<String>,
+        value: Rc<Expression>,
+    },
     Function {
         name: Rc<String>,
         parameters: Rc<[String]>,
@@ -110,11 +114,9 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
 
     match tokens.pop() {
         Some(Token::Assignment) => {}
-        _ => {
-            return Err(MovaError::Parser(
-                "Expected assignment before function body".into(),
-            ));
-        }
+        _ => Err(MovaError::Parser(
+            "Expected assignment before function body".into(),
+        ))?,
     }
 
     Ok(Node::Statement(Rc::new(Statement::Function {
@@ -131,7 +133,23 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
             "fn" => parse_function(tokens),
             k => Err(MovaError::Parser(format!("Unexpected keyword found: {k}",))),
         },
-        Some(_) => parse_expression(tokens).map(|t| Node::Expression(Rc::new(t))),
+        Some(_) => {
+            let result = parse_expression(tokens);
+            match result? {
+                Expression::Identifier(name) => match tokens.last() {
+                    Some(Token::Assignment) => {
+                        tokens.pop();
+                        let value = parse_expression(tokens)?;
+                        Ok(Node::Statement(Rc::new(Statement::Assignment {
+                            name,
+                            value: Rc::new(value),
+                        })))
+                    }
+                    _ => Ok(Node::Expression(Rc::new(Expression::Identifier(name)))),
+                },
+                e => Ok(Node::Expression(Rc::new(e))),
+            }
+        }
         None => Err(MovaError::Parser("Unexpected end of input".into())),
     }
 }
