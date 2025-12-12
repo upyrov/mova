@@ -31,7 +31,7 @@ impl Scope {
         self.locals.insert(name.into(), slot);
     }
 
-    fn find_slot(&self, name: &str) -> Result<Slot> {
+    pub fn find_slot(&self, name: &str) -> Result<Slot> {
         if let Some(slot) = self.locals.get(name) {
             return Ok(Rc::clone(slot));
         }

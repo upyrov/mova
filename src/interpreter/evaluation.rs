@@ -149,6 +149,36 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             ))?;
             scope.borrow_mut().declare(&name, value, *is_mutable);
         }
+        Statement::Assignment { name, value } => {
+            let new_value = evaluate(
+                Rc::new(Node::Expression(Rc::clone(value))),
+                Rc::clone(&scope),
+            )?
+            .ok_or(MovaError::Runtime(
+                "Expected expression, but received statement as value".into(),
+            ))?;
+            let slot = scope.borrow().find_slot(name)?;
+            let maybe_ref = {
+                let data = slot.borrow();
+                match &data.value {
+                    Value::Reference(r) => Some(r.clone()),
+                    _ => None,
+                }
+            };
+            if let Some(reference) = maybe_ref {
+                let mut old_value = reference.write()?;
+                old_value.value = new_value;
+            } else {
+                let mut data = slot.borrow_mut();
+                if data.is_mutable {
+                    data.value = new_value;
+                } else {
+                    return Err(MovaError::Runtime(
+                        format!("Cannot assign to immutable variable '{}'", name).into(),
+                    ));
+                }
+            }
+        }
         Statement::Function {
             name,
             parameters,
