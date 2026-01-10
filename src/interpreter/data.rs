@@ -23,6 +23,7 @@ pub enum State {
     Free,
     Borrowed(usize),
     MutablyBorrowed,
+    Deallocated,
 }
 
 #[derive(Clone, Debug)]

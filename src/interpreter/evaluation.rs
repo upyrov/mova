@@ -2,12 +2,36 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     error::{MovaError, Result},
-    interpreter::{data::Value, scope::Scope},
+    interpreter::{
+        data::{Data, Slot, State, Value},
+        reference::Reference,
+        scope::Scope,
+    },
     parser::{expression::Expression, node::Node, statement::Statement},
 };
 
+/// Peels off Value::Reference layers to get to the actual data
+fn resolve_value(value: Value) -> Result<Value> {
+    match value {
+        Value::Reference(r) => {
+            let data = r.read()?; // checks for deallocated state
+            if let Value::Moved = data.value {
+                return Err(MovaError::Runtime("Cannot read from moved value".into()));
+            }
+
+            // Recursively resolve in case of reference chains
+            resolve_value(data.value.clone())
+        }
+        val => Ok(val),
+    }
+}
+
 fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Result<Value> {
-    match (operator, left, right) {
+    // Resolve operands (auto-dereference)
+    let left_val = resolve_value(left)?;
+    let right_val = resolve_value(right)?;
+
+    match (operator, left_val, right_val) {
         ("+", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
         ("-", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l - r)),
         ("*", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
@@ -68,9 +92,23 @@ fn evaluate_call(
                     .for_each(|(value, parameter)| s.declare(parameter, value, false));
             }
 
-            evaluate(Rc::new(Node::Expression(Rc::clone(&body))), execution_scope)
+            let result = evaluate(
+                Rc::new(Node::Expression(Rc::clone(&body))),
+                Rc::clone(&execution_scope),
+            );
+
+            execution_scope.borrow_mut().invalidate();
+
+            result
         }
         _ => Err(MovaError::Runtime(format!("'{name}' is not callable",))),
+    }
+}
+
+fn evaluate_slot(expression: &Expression, scope: Rc<RefCell<Scope>>) -> Result<Slot> {
+    match expression {
+        Expression::Identifier(name) => scope.borrow().find_slot(name),
+        _ => Err(MovaError::Runtime("Expression cannot be referenced".into())),
     }
 }
 
@@ -81,15 +119,44 @@ fn evaluate_expression(
     match &*expression {
         Expression::Number(n) => Ok(Some(Value::Number(*n))),
         Expression::Boolean(b) => Ok(Some(Value::Boolean(*b))),
-        Expression::Identifier(i) => Ok(Some(scope.borrow_mut().resolve(i)?)),
-        Expression::Reference { name, is_mutable } => {
-            let mut env = scope.borrow_mut();
-            let value = if *is_mutable {
-                env.borrow_mut(name)?
+        Expression::Identifier(i) => {
+            // Auto-dereference on read
+            let val = scope.borrow_mut().resolve(i)?;
+            if let Value::Reference(r) = val {
+                let data = r.read()?;
+                if let Value::Moved = data.value {
+                    return Err(MovaError::Runtime("Cannot read from moved value".into()));
+                }
+                return Ok(Some(data.value.clone()));
+            }
+            Ok(Some(val))
+        }
+        Expression::Reference {
+            data: target_data,
+            is_mutable,
+        } => {
+            let is_lvalue = matches!(**target_data, Expression::Identifier(_));
+
+            let slot = if is_lvalue {
+                evaluate_slot(target_data, Rc::clone(&scope))?
             } else {
-                env.borrow(name)?
+                let val = evaluate(
+                    Rc::new(Node::Expression(Rc::clone(target_data))),
+                    Rc::clone(&scope),
+                )?
+                .ok_or(MovaError::Runtime(
+                    "Reference target yielded no value".into(),
+                ))?;
+
+                Rc::new(RefCell::new(Data {
+                    value: val,
+                    state: State::Free,
+                    is_mutable: *is_mutable,
+                }))
             };
-            Ok(Some(value))
+
+            let reference = Reference::new(slot, *is_mutable)?;
+            Ok(Some(Value::Reference(Rc::new(reference))))
         }
         Expression::BinaryExpression {
             operator,
@@ -112,15 +179,18 @@ fn evaluate_expression(
                 "Expected expression, but received statement as right operand".into(),
             ))?;
 
-            Ok(Some(evaluate_binary_expression(&operator, left, right)?))
+            Ok(Some(evaluate_binary_expression(operator, left, right)?))
         }
-        Expression::Call { name, arguments } => evaluate_call(scope, &name, Rc::clone(arguments)),
+        Expression::Call { name, arguments } => evaluate_call(scope, name, Rc::clone(arguments)),
         Expression::Block(b) => {
             let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
             let mut result = None;
             for node in b.into_iter() {
                 result = evaluate(Rc::new(node.clone()), Rc::clone(&child_scope))?;
             }
+
+            child_scope.borrow_mut().invalidate();
+
             Ok(result)
         }
         Expression::Program(p) => {
@@ -147,7 +217,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             .ok_or(MovaError::Runtime(
                 "Expected expression, but received statement as value".into(),
             ))?;
-            scope.borrow_mut().declare(&name, value, *is_mutable);
+            scope.borrow_mut().declare(name, value, *is_mutable);
         }
         Statement::Assignment { name, value } => {
             let new_value = evaluate(
@@ -157,26 +227,22 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             .ok_or(MovaError::Runtime(
                 "Expected expression, but received statement as value".into(),
             ))?;
+
             let slot = scope.borrow().find_slot(name)?;
-            let maybe_ref = {
-                let data = slot.borrow();
-                match &data.value {
-                    Value::Reference(r) => Some(r.clone()),
-                    _ => None,
-                }
-            };
-            if let Some(reference) = maybe_ref {
-                let mut old_value = reference.write()?;
-                old_value.value = new_value;
+            let mut data = slot.borrow_mut();
+
+            if let crate::interpreter::data::State::Deallocated = data.state {
+                return Err(MovaError::Runtime(
+                    format!("Cannot assign to deallocated variable '{}'", name).into(),
+                ));
+            }
+
+            if data.is_mutable {
+                data.value = new_value;
             } else {
-                let mut data = slot.borrow_mut();
-                if data.is_mutable {
-                    data.value = new_value;
-                } else {
-                    return Err(MovaError::Runtime(
-                        format!("Cannot assign to immutable variable '{}'", name).into(),
-                    ));
-                }
+                return Err(MovaError::Runtime(
+                    format!("Cannot assign to immutable variable '{}'", name).into(),
+                ));
             }
         }
         Statement::Function {
@@ -189,7 +255,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 body: Rc::clone(body),
                 definition_scope: Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope))))),
             };
-            scope.borrow_mut().declare(&name, function, false);
+            scope.borrow_mut().declare(name, function, false);
         }
     }
     Ok(())

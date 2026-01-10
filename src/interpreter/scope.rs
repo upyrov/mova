@@ -2,10 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     error::{MovaError, Result},
-    interpreter::{
-        data::{Data, Slot, State, Value},
-        reference::Reference,
-    },
+    interpreter::data::{Data, Slot, State, Value},
 };
 
 #[derive(Clone, Debug)]
@@ -31,6 +28,15 @@ impl Scope {
         self.locals.insert(name.into(), slot);
     }
 
+    /// This ensures that any lingering references to these variables become invalid
+    pub fn invalidate(&mut self) {
+        self.locals.values().for_each(|slot| {
+            let mut data = slot.borrow_mut();
+            data.state = State::Deallocated;
+            data.value = Value::Moved; // clears value to free resources
+        });
+    }
+
     pub fn find_slot(&self, name: &str) -> Result<Slot> {
         if let Some(slot) = self.locals.get(name) {
             return Ok(Rc::clone(slot));
@@ -46,6 +52,12 @@ impl Scope {
         let slot = self.find_slot(name)?;
         let mut data = slot.borrow_mut();
 
+        if let State::Deallocated = data.state {
+            return Err(MovaError::Runtime(format!(
+                "Unable to use '{name}' because it has been deallocated (out of scope)"
+            )));
+        }
+
         if matches!(data.state, State::MutablyBorrowed) {
             return Err(MovaError::Runtime(format!(
                 "Unable to use '{name}' because it is mutably borrowed"
@@ -53,12 +65,15 @@ impl Scope {
         }
 
         match &data.value {
-            Value::Number(_) | Value::Boolean(_) => Ok(data.value.clone()),
+            Value::Number(_) | Value::Boolean(_) | Value::Function { .. } | Value::Reference(_) => {
+                Ok(data.value.clone())
+            }
             Value::Moved => {
                 return Err(MovaError::Runtime(format!(
                     "Unable to use '{name}' because it is moved"
                 )));
             }
+            #[allow(unreachable_patterns)]
             _ => {
                 if matches!(
                     data.state,
@@ -72,61 +87,5 @@ impl Scope {
                 Ok(std::mem::replace(&mut data.value, Value::Moved))
             }
         }
-    }
-
-    pub fn borrow(&mut self, name: &str) -> Result<Value> {
-        let slot = self.find_slot(name)?;
-        let mut data = slot.borrow_mut();
-
-        if let Value::Moved = data.value {
-            return Err(MovaError::Runtime(format!(
-                "Unable to borrow '{name}' because it is moved"
-            )));
-        }
-        if matches!(data.state, State::MutablyBorrowed) {
-            return Err(MovaError::Runtime(format!(
-                "Unable to borrow '{name}' because it is mutably borrowed"
-            )));
-        }
-
-        if let State::Borrowed(count) = data.state {
-            data.state = State::Borrowed(count + 1);
-        }
-
-        Ok(Value::Reference(Rc::new(Reference {
-            slot: Rc::clone(&slot),
-            is_mutable: false,
-        })))
-    }
-
-    pub fn borrow_mut(&mut self, name: &str) -> Result<Value> {
-        let slot = self.find_slot(name)?;
-        let mut data = slot.borrow_mut();
-
-        if let Value::Moved = data.value {
-            return Err(MovaError::Runtime(format!(
-                "Unable to borrow '{name}' because it is moved"
-            )));
-        }
-
-        if matches!(data.state, State::MutablyBorrowed) {
-            return Err(MovaError::Runtime(format!(
-                "Unable to borrow '{name}' because it is mutably borrowed"
-            )));
-        }
-        if matches!(
-            data.state,
-            State::Borrowed(count) if count > 0
-        ) {
-            return Err(MovaError::Runtime(format!(
-                "Unable to move {name}' because it is borrowed"
-            )));
-        }
-
-        data.state = State::MutablyBorrowed;
-        Ok(Value::Reference(Rc::new(Reference {
-            slot: Rc::clone(&slot),
-            is_mutable: true,
-        })))
     }
 }

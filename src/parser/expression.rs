@@ -12,7 +12,7 @@ pub enum Expression {
     Boolean(bool),
     Identifier(Rc<String>),
     Reference {
-        name: Rc<String>,
+        data: Rc<Expression>,
         is_mutable: bool,
     },
     BinaryExpression {
@@ -38,7 +38,7 @@ fn get_infix_binding_power(operator: &str) -> Option<(u8, u8)> {
 
 fn get_postfix_binding_power(operator: &str) -> Option<(u8, ())> {
     match operator {
-        "(" | "&" => Some((2, ())),
+        "(" => Some((2, ())),
         _ => None,
     }
 }
@@ -53,6 +53,10 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
                 tokens.pop();
                 break;
             }
+            Some(Token::SpecialCharacter(')')) => {
+                tokens.pop();
+                break;
+            }
             Some(_) => {
                 let argument = parse_expression(tokens)?;
                 parameters.push(argument);
@@ -62,6 +66,7 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
                         tokens.pop();
                     }
                     Some(Token::Operator(o)) if o == ")" => {}
+                    Some(Token::SpecialCharacter(')')) => {}
                     None => {
                         return Err(MovaError::Parser(
                             "Expected argument list to be closed".into(),
@@ -69,15 +74,14 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
                     }
                     _ => {
                         return Err(MovaError::Parser(
-                            "Expected another argument expression or argument list to be closed"
-                                .into(),
+                            "Expected comma or argument list to be closed".into(),
                         ));
                     }
                 }
             }
             None => {
                 return Err(MovaError::Parser(
-                    "Expected another argument expression or argument list to be closed".into(),
+                    "Expected argument list to be closed".into(),
                 ));
             }
         }
@@ -95,19 +99,25 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
 }
 
 fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result<Expression> {
-    let mut left = match tokens.pop() {
-        Some(Token::Identifier(i)) => Expression::Identifier(Rc::new(i)),
-        Some(Token::Number(n)) => Expression::Number(
-            n.parse()
-                .map_err(|_| MovaError::Parser(format!("Invalid number: {n}")))?,
-        ),
-        Some(Token::Boolean(b)) => Expression::Boolean(b),
-        Some(t) => {
-            return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));
+    let mut left = match tokens.last() {
+        Some(Token::Operator(op)) if op == "&" => {
+            tokens.pop();
+            parse_reference(tokens)?
         }
-        None => {
-            return Err(MovaError::Parser("Unexpected end of input".into()));
-        }
+        _ => match tokens.pop() {
+            Some(Token::Identifier(i)) => Expression::Identifier(Rc::new(i)),
+            Some(Token::Number(n)) => Expression::Number(
+                n.parse()
+                    .map_err(|_| MovaError::Parser(format!("Invalid number: {n}")))?,
+            ),
+            Some(Token::Boolean(b)) => Expression::Boolean(b),
+            Some(t) => {
+                return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));
+            }
+            None => {
+                return Err(MovaError::Parser("Unexpected end of input".into()));
+            }
+        },
     };
 
     while let Some(t) = tokens.last().cloned() {
@@ -117,34 +127,9 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     if lbp < binding_power {
                         break;
                     }
-
-                    left = match o.as_str() {
-                        "(" => parse_call(tokens, left)?,
-                        "&" => match left {
-                            Expression::Identifier(i) => {
-                                tokens.pop();
-                                let is_mutable =
-                                    matches!(tokens.last(), Some(Token::Keyword(k)) if k == "mut");
-                                if is_mutable {
-                                    tokens.pop();
-                                }
-                                Expression::Reference {
-                                    name: Rc::clone(&i),
-                                    is_mutable,
-                                }
-                            }
-                            t => {
-                                return Err(MovaError::Parser(format!(
-                                    "Unexpected token found: {t:?}"
-                                )));
-                            }
-                        },
-                        t => {
-                            return Err(MovaError::Parser(format!(
-                                "Unexpected operator found: {t:?}"
-                            )));
-                        }
-                    };
+                    if o == "(" {
+                        left = parse_call(tokens, left)?;
+                    }
                     continue;
                 }
 
@@ -165,6 +150,16 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
 
                 break;
             }
+            Token::SpecialCharacter('(') => {
+                if let Some((lbp, ())) = get_postfix_binding_power("(") {
+                    if lbp < binding_power {
+                        break;
+                    }
+                    left = parse_call(tokens, left)?;
+                    continue;
+                }
+                break;
+            }
             _ => break,
         }
     }
@@ -172,33 +167,40 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
     Ok(left)
 }
 
+fn parse_reference(tokens: &mut Vec<Token>) -> Result<Expression> {
+    let is_mutable = matches!(tokens.last(), Some(Token::Keyword(k)) if k == "mut");
+    if is_mutable {
+        tokens.pop();
+    }
+    let right = parse_binary_expression(tokens, 7)?;
+    Ok(Expression::Reference {
+        data: Rc::new(right),
+        is_mutable,
+    })
+}
+
 fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
     match tokens.last() {
-        Some(token) => match token {
-            Token::SpecialCharacter('{') => {
-                tokens.pop();
-                let mut body = Vec::new();
+        Some(Token::SpecialCharacter('{')) => {
+            tokens.pop();
+            let mut body = Vec::new();
 
-                loop {
-                    match tokens.last() {
-                        Some(token) => match token {
-                            Token::SpecialCharacter('}') => break,
-                            _ => body.push(parse_statement(tokens)?),
-                        },
-                        None => {
-                            return Err(MovaError::Parser("Expected block to be closed".into()));
-                        }
+            loop {
+                match tokens.last() {
+                    Some(Token::SpecialCharacter('}')) => break,
+                    Some(_) => body.push(parse_statement(tokens)?),
+                    None => {
+                        return Err(MovaError::Parser("Expected block to be closed".into()));
                     }
                 }
-
-                match tokens.pop() {
-                    Some(Token::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
-                    _ => Err(MovaError::Parser("Expected block to be closed".into())),
-                }
             }
-            _ => parse_binary_expression(tokens, 0),
-        },
-        None => Err(MovaError::Parser("Unexpected end of input".into())),
+
+            match tokens.pop() {
+                Some(Token::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
+                _ => Err(MovaError::Parser("Expected block to be closed".into())),
+            }
+        }
+        _ => parse_binary_expression(tokens, 0),
     }
 }
 

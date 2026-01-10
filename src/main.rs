@@ -19,12 +19,14 @@ fn main() {
             Ok(result) => {
                 if let Some(value) = result {
                     match value {
-                        Value::Reference(r) => {
-                            let guard = r.read();
-                            match &guard.value {
-                                value => println!("{value:?}"),
+                        Value::Reference(r) => match r.read() {
+                            Ok(guard) => {
+                                println!("{:?}", guard.value);
                             }
-                        }
+                            Err(e) => {
+                                println!("{e}");
+                            }
+                        },
                         _ => println!("{value:?}"),
                     }
                 }
