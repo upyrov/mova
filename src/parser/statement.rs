@@ -17,6 +17,10 @@ pub enum Statement {
         name: Rc<String>,
         value: Rc<Expression>,
     },
+    DereferenceAssignment {
+        target: Rc<Expression>,
+        value: Rc<Expression>,
+    },
     Function {
         name: Rc<String>,
         parameters: Rc<[String]>,
@@ -127,7 +131,11 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
 }
 
 pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
-    match tokens.last() {
+    while let Some(Token::SpecialCharacter(';')) = tokens.last() {
+        tokens.pop();
+    }
+
+    let node = match tokens.last() {
         Some(Token::Keyword(k)) => match k.as_str() {
             "let" => parse_variable(tokens),
             "fn" => parse_function(tokens),
@@ -147,9 +155,26 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
                     }
                     _ => Ok(Node::Expression(Rc::new(Expression::Identifier(name)))),
                 },
+                Expression::Dereference(target) => match tokens.last() {
+                    Some(Token::Assignment) => {
+                        tokens.pop();
+                        let value = parse_expression(tokens)?;
+                        Ok(Node::Statement(Rc::new(Statement::DereferenceAssignment {
+                            target,
+                            value: Rc::new(value),
+                        })))
+                    }
+                    _ => Ok(Node::Expression(Rc::new(Expression::Dereference(target)))),
+                },
                 e => Ok(Node::Expression(Rc::new(e))),
             }
         }
         None => Err(MovaError::Parser("Unexpected end of input".into())),
+    }?;
+
+    while let Some(Token::SpecialCharacter(';')) = tokens.last() {
+        tokens.pop();
     }
+
+    Ok(node)
 }

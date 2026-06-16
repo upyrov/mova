@@ -14,6 +14,12 @@ pub struct Reference {
     pub is_mutable: bool,
 }
 
+impl PartialEq for Reference {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.slot, &other.slot) && self.is_mutable == other.is_mutable
+    }
+}
+
 impl Reference {
     pub fn new(slot: Slot, is_mutable: bool) -> Result<Self> {
         let mut data = slot.borrow_mut();

@@ -65,7 +65,7 @@ impl Scope {
         }
 
         match &data.value {
-            Value::Number(_) | Value::Boolean(_) | Value::Function { .. } | Value::Reference(_) => {
+            Value::Number(_) | Value::Boolean(_) => {
                 Ok(data.value.clone())
             }
             Value::Moved => {
@@ -73,7 +73,6 @@ impl Scope {
                     "Unable to use '{name}' because it is moved"
                 )));
             }
-            #[allow(unreachable_patterns)]
             _ => {
                 if matches!(
                     data.state,

@@ -18,7 +18,34 @@ pub enum Value {
     Moved,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l == r,
+            (Value::Boolean(l), Value::Boolean(r)) => l == r,
+            (Value::Reference(l), Value::Reference(r)) => l == r,
+            (Value::Moved, Value::Moved) => true,
+            (
+                Value::Function {
+                    parameters: lp,
+                    body: lb,
+                    definition_scope: ls,
+                },
+                Value::Function {
+                    parameters: rp,
+                    body: rb,
+                    definition_scope: rs,
+                },
+            ) => {
+                // For functions, we'll consider them equal only if they are the same instance
+                Rc::ptr_eq(lp, rp) && Rc::ptr_eq(lb, rb) && Rc::ptr_eq(ls, rs)
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum State {
     Free,
     Borrowed(usize),
@@ -26,7 +53,7 @@ pub enum State {
     Deallocated,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Data {
     pub value: Value,
     pub state: State,

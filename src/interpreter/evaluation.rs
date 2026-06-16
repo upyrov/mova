@@ -10,28 +10,8 @@ use crate::{
     parser::{expression::Expression, node::Node, statement::Statement},
 };
 
-/// Peels off Value::Reference layers to get to the actual data
-fn resolve_value(value: Value) -> Result<Value> {
-    match value {
-        Value::Reference(r) => {
-            let data = r.read()?; // checks for deallocated state
-            if let Value::Moved = data.value {
-                return Err(MovaError::Runtime("Cannot read from moved value".into()));
-            }
-
-            // Recursively resolve in case of reference chains
-            resolve_value(data.value.clone())
-        }
-        val => Ok(val),
-    }
-}
-
 fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Result<Value> {
-    // Resolve operands (auto-dereference)
-    let left_val = resolve_value(left)?;
-    let right_val = resolve_value(right)?;
-
-    match (operator, left_val, right_val) {
+    match (operator, left, right) {
         ("+", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
         ("-", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l - r)),
         ("*", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
@@ -120,15 +100,7 @@ fn evaluate_expression(
         Expression::Number(n) => Ok(Some(Value::Number(*n))),
         Expression::Boolean(b) => Ok(Some(Value::Boolean(*b))),
         Expression::Identifier(i) => {
-            // Auto-dereference on read
             let val = scope.borrow_mut().resolve(i)?;
-            if let Value::Reference(r) = val {
-                let data = r.read()?;
-                if let Value::Moved = data.value {
-                    return Err(MovaError::Runtime("Cannot read from moved value".into()));
-                }
-                return Ok(Some(data.value.clone()));
-            }
             Ok(Some(val))
         }
         Expression::Reference {
@@ -182,6 +154,27 @@ fn evaluate_expression(
             Ok(Some(evaluate_binary_expression(operator, left, right)?))
         }
         Expression::Call { name, arguments } => evaluate_call(scope, name, Rc::clone(arguments)),
+        Expression::Dereference(inner) => {
+            let val = evaluate(
+                Rc::new(Node::Expression(Rc::clone(inner))),
+                Rc::clone(&scope),
+            )?
+            .ok_or(MovaError::Runtime(
+                "Dereference target yielded no value".into(),
+            ))?;
+
+            if let Value::Reference(r) = val {
+                let data = r.read()?;
+                if let Value::Moved = data.value {
+                    return Err(MovaError::Runtime("Cannot read from moved value".into()));
+                }
+                Ok(Some(data.value.clone()))
+            } else {
+                Err(MovaError::Runtime(
+                    "Cannot dereference non-reference value".into(),
+                ))
+            }
+        }
         Expression::Block(b) => {
             let child_scope = Rc::new(RefCell::new(Scope::new(Some(Rc::clone(&scope)))));
             let mut result = None;
@@ -231,10 +224,23 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             let slot = scope.borrow().find_slot(name)?;
             let mut data = slot.borrow_mut();
 
-            if let crate::interpreter::data::State::Deallocated = data.state {
-                return Err(MovaError::Runtime(
-                    format!("Cannot assign to deallocated variable '{}'", name).into(),
-                ));
+            match data.state {
+                State::Deallocated => {
+                    return Err(MovaError::Runtime(
+                        format!("Cannot assign to deallocated variable '{}'", name).into(),
+                    ));
+                }
+                State::Borrowed(count) if count > 0 => {
+                    return Err(MovaError::Runtime(
+                        format!("Cannot assign to borrowed variable '{}'", name).into(),
+                    ));
+                }
+                State::MutablyBorrowed => {
+                    return Err(MovaError::Runtime(
+                        format!("Cannot assign to mutably borrowed variable '{}'", name).into(),
+                    ));
+                }
+                _ => {}
             }
 
             if data.is_mutable {
@@ -257,6 +263,32 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             };
             scope.borrow_mut().declare(name, function, false);
         }
+        Statement::DereferenceAssignment { target, value } => {
+            let target_val = evaluate(
+                Rc::new(Node::Expression(Rc::clone(target))),
+                Rc::clone(&scope),
+            )?
+            .ok_or(MovaError::Runtime(
+                "Dereference target yielded no value".into(),
+            ))?;
+
+            let new_value = evaluate(
+                Rc::new(Node::Expression(Rc::clone(value))),
+                Rc::clone(&scope),
+            )?
+            .ok_or(MovaError::Runtime(
+                "Assignment value yielded no value".into(),
+            ))?;
+
+            if let Value::Reference(r) = target_val {
+                let mut data = r.write()?;
+                data.value = new_value;
+            } else {
+                return Err(MovaError::Runtime(
+                    "Cannot dereference non-reference value".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -267,6 +299,147 @@ pub fn evaluate(node: Rc<Node>, scope: Rc<RefCell<Scope>>) -> Result<Option<Valu
         Node::Statement(s) => {
             evaluate_statement(Rc::clone(s), scope)?;
             Ok(None)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runner::run;
+
+    #[test]
+    fn test_cannot_assign_to_borrowed_variable() {
+        let input = "
+            let mut x = 10
+            let y = &x
+            x = 20
+        ";
+        let result = run(input);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot assign to borrowed variable 'x'")
+        );
+    }
+
+    #[test]
+    fn test_cannot_assign_to_mutably_borrowed_variable() {
+        let input = "
+            let mut x = 10
+            let y = &mut x
+            x = 20
+        ";
+        let result = run(input);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot assign to mutably borrowed variable 'x'")
+        );
+    }
+
+    #[test]
+    fn test_can_assign_after_borrow_ends() {
+        let input = "
+            let mut x = 10
+            {
+                let y = &x
+            }
+            x = 20
+            x
+        ";
+        let result = run(input);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(Value::Number(20)));
+    }
+
+    #[test]
+    fn test_explicit_dereference() {
+        let input = "
+            let x = 10;
+            let y = &x;
+            *y
+        ";
+        let result = run(input);
+        match &result {
+            Ok(val) => assert_eq!(val, &Some(Value::Number(10))),
+            Err(e) => panic!("Test failed with error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_dereference_assignment() {
+        let input = "
+            let mut x = 10;
+            let y = &mut x;
+            *y = 20;
+            x
+        ";
+        let result = run(input);
+        match &result {
+            Ok(val) => assert_eq!(val, &Some(Value::Number(20))),
+            Err(e) => panic!("Test failed with error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_cannot_dereference_immutable_reference_for_assignment() {
+        let input = "
+            let mut x = 10;
+            let y = &x;
+            *y = 20;
+        ";
+        let result = run(input);
+        match &result {
+            Ok(val) => panic!("Test should have failed but succeeded with: {:?}", val),
+            Err(e) => assert!(
+                e.to_string()
+                    .contains("Cannot assign to an immutable reference"),
+                "Error message was: {}",
+                e
+            ),
+        }
+    }
+
+    #[test]
+    fn test_auto_dereference_in_binary_expression_is_no_longer_supported() {
+        let input = "
+            let x = 10;
+            let y = &x;
+            y + 5
+        ";
+        let result = run(input);
+        match &result {
+            Ok(val) => panic!("Test should have failed but succeeded with: {:?}", val),
+            Err(e) => assert!(
+                e.to_string().contains("Unexpected operator '+'"),
+                "Error message was: {}",
+                e
+            ),
+        }
+    }
+
+    #[test]
+    fn test_reference_move_semantics() {
+        let input = "
+            let x = 10;
+            let y = &x;
+            let z = y;
+            y
+        ";
+        let result = run(input);
+        match &result {
+            Ok(val) => panic!("Test should have failed but succeeded with: {:?}", val),
+            Err(e) => assert!(
+                e.to_string()
+                    .contains("Unable to use 'y' because it is moved"),
+                "Error message was: {}",
+                e
+            ),
         }
     }
 }

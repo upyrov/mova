@@ -50,10 +50,8 @@ fn echo(value) = value
 let data = 100
 let reference = &data
 
-// Mova features "Auto-Dereferencing".
-// You can use references directly in math and logic operations
-// without needing an explicit dereference operator.
-let calculation = reference * 2
+// We use '*' to explicitly dereference.
+let calculation = *reference * 2
 ```
 
 ### Mutation

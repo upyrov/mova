@@ -24,6 +24,7 @@ pub enum Expression {
         name: Rc<String>,
         arguments: Rc<[Expression]>,
     },
+    Dereference(Rc<Expression>),
     Block(Rc<[Node]>),
     Program(Rc<[Node]>),
 }
@@ -103,6 +104,19 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
         Some(Token::Operator(op)) if op == "&" => {
             tokens.pop();
             parse_reference(tokens)?
+        }
+        Some(Token::Operator(op)) if op == "*" => {
+            tokens.pop();
+            Expression::Dereference(Rc::new(parse_binary_expression(tokens, 7)?))
+        }
+        Some(Token::Operator(op)) if op == "(" => {
+            tokens.pop();
+            let expr = parse_expression(tokens)?;
+            match tokens.pop() {
+                Some(Token::Operator(op)) if op == ")" => Ok(expr),
+                Some(t) => Err(MovaError::Parser(format!("Expected ')' but found {t:?}"))),
+                None => Err(MovaError::Parser("Expected ')' but found end of input".into())),
+            }?
         }
         _ => match tokens.pop() {
             Some(Token::Identifier(i)) => Expression::Identifier(Rc::new(i)),
