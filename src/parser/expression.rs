@@ -26,6 +26,11 @@ pub enum Expression {
     },
     Dereference(Rc<Expression>),
     Block(Rc<[Node]>),
+    If {
+        condition: Rc<Expression>,
+        consequence: Rc<Expression>,
+        alternative: Option<Rc<Expression>>,
+    },
     Program(Rc<[Node]>),
 }
 
@@ -125,6 +130,30 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     .map_err(|_| MovaError::Parser(format!("Invalid number: {n}")))?,
             ),
             Some(Token::Boolean(b)) => Expression::Boolean(b),
+            Some(Token::Keyword(k)) if k == "if" => {
+                let condition = Rc::new(parse_expression(tokens)?);
+                let consequence = Rc::new(parse_block(tokens)?);
+                let alternative = match tokens.last() {
+                    Some(Token::Keyword(k)) if k == "else" => {
+                        tokens.pop();
+                        if let Some(Token::Keyword(next_k)) = tokens.last() {
+                            if next_k == "if" {
+                                Some(Rc::new(parse_expression(tokens)?))
+                            } else {
+                                Some(Rc::new(parse_block(tokens)?))
+                            }
+                        } else {
+                            Some(Rc::new(parse_block(tokens)?))
+                        }
+                    }
+                    _ => None,
+                };
+                Expression::If {
+                    condition,
+                    consequence,
+                    alternative,
+                }
+            }
             Some(t) => {
                 return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));
             }

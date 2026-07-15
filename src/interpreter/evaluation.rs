@@ -186,6 +186,35 @@ fn evaluate_expression(
 
             Ok(result)
         }
+        Expression::If {
+            condition,
+            consequence,
+            alternative,
+        } => {
+            let condition_value = evaluate(
+                Rc::new(Node::Expression(Rc::clone(condition))),
+                Rc::clone(&scope),
+            )?
+            .ok_or_else(|| MovaError::Runtime("Condition yielded no value".into()))?;
+
+            match condition_value {
+                Value::Boolean(true) => evaluate(
+                    Rc::new(Node::Expression(Rc::clone(consequence))),
+                    Rc::clone(&scope),
+                ),
+                Value::Boolean(false) => {
+                    if let Some(alt) = alternative {
+                        evaluate(
+                            Rc::new(Node::Expression(Rc::clone(alt))),
+                            Rc::clone(&scope),
+                        )
+                    } else {
+                        Ok(None)
+                    }
+                }
+                _ => Err(MovaError::Runtime("Condition must be a boolean".into())),
+            }
+        }
         Expression::Program(p) => {
             let mut result = None;
             for node in p.into_iter() {
@@ -441,5 +470,50 @@ mod tests {
                 e
             ),
         }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "
+            let mut x = 10;
+            if true {
+                x = 20;
+            }
+            x
+        ";
+        let result = run(input);
+        assert_eq!(result.unwrap(), Some(Value::Number(20)));
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        let input = "
+            let mut x = 10;
+            if false {
+                x = 20;
+            } else {
+                x = 30;
+            }
+            x
+        ";
+        let result = run(input);
+        assert_eq!(result.unwrap(), Some(Value::Number(30)));
+    }
+
+    #[test]
+    fn test_if_else_if_expression() {
+        let input = "
+            let mut x = 10;
+            if false {
+                x = 20;
+            } else if true {
+                x = 40;
+            } else {
+                x = 30;
+            }
+            x
+        ";
+        let result = run(input);
+        assert_eq!(result.unwrap(), Some(Value::Number(40)));
     }
 }

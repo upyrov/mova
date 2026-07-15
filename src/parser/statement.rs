@@ -136,11 +136,8 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
     }
 
     let node = match tokens.last() {
-        Some(Token::Keyword(k)) => match k.as_str() {
-            "let" => parse_variable(tokens),
-            "fn" => parse_function(tokens),
-            k => Err(MovaError::Parser(format!("Unexpected keyword found: {k}",))),
-        },
+        Some(Token::Keyword(k)) if k == "let" => parse_variable(tokens),
+        Some(Token::Keyword(k)) if k == "fn" => parse_function(tokens),
         Some(_) => {
             let result = parse_expression(tokens);
             match result? {

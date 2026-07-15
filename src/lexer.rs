@@ -50,7 +50,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                     }
                 }
                 let token = match value.as_str() {
-                    "let" | "mut" | "fn" => Token::Keyword(value),
+                    "let" | "mut" | "fn" | "if" | "else" => Token::Keyword(value),
                     "true" => Token::Boolean(true),
                     "false" => Token::Boolean(false),
                     _ => Token::Identifier(value),
