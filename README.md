@@ -16,6 +16,7 @@ let y = 111
 ```
 
 ### Functions
+
 ```
 // We use 'fn' keyword to declare a function.
 // Mova is an expression-based language. The result of the last expression
@@ -25,6 +26,7 @@ let result = add(x, y)
 ```
 
 ### Scope and Shadowing
+
 ```
 // We can declare 'x' again using the same 'let' keyword.
 // This "shadows" (hides) the previous definition of 'x'.
@@ -42,6 +44,7 @@ let scoped_value = {
 ```
 
 ### References and Borrowing
+
 ```
 // '&' creates an immutable reference (a borrow).
 // This allows you to read data without taking ownership of it.
@@ -55,6 +58,7 @@ let calculation = *reference * 2
 ```
 
 ### Mutation
+
 ```
 // To make a variable modifiable, use the 'mut' keyword.
 let mut counter = 0
@@ -68,6 +72,33 @@ fn increment(value) = {
 
 // When passing mutable references, the borrow checker ensures safety
 increment(&mut counter)
+```
+
+### Conditions
+
+```
+// 'if' expressions allow conditional logic
+let age = 18
+if age > 17 {
+    // Block for true condition
+    let message = 1
+} else {
+    // Optional else block
+    let message = 0
+}
+
+// 'if' is an expression, so it returns the evaluated block's result
+let is_adult = if age > 17 { true } else { false }
+```
+
+### Loops
+
+```
+// Loops execute a block as long as the condition is true
+let mut counter = 0
+while counter < 5 {
+    counter = counter + 1
+}
 ```
 
 ## License
