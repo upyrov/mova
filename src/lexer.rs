@@ -50,7 +50,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                     }
                 }
                 let token = match value.as_str() {
-                    "let" | "mut" | "fn" | "if" | "else" => Token::Keyword(value),
+                    "let" | "mut" | "fn" | "if" | "else" | "while" => Token::Keyword(value),
                     "true" => Token::Boolean(true),
                     "false" => Token::Boolean(false),
                     _ => Token::Identifier(value),
@@ -70,8 +70,15 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                 }
                 tokens.push(Token::Number(value));
             }
-            '+' | '-' | '*' | '(' | ')' | '&' => tokens.push(Token::Operator(c.into())),
-            '=' => tokens.push(Token::Assignment),
+            '+' | '-' | '*' | '(' | ')' | '&' | '<' | '>' => tokens.push(Token::Operator(c.into())),
+            '=' => {
+                if let Some((_, '=')) = input.peek() {
+                    input.next();
+                    tokens.push(Token::Operator("==".into()));
+                } else {
+                    tokens.push(Token::Assignment);
+                }
+            }
             '{' | '}' | ',' | ';' => tokens.push(Token::SpecialCharacter(c)),
             _ => {
                 return Err(MovaError::Lexer {

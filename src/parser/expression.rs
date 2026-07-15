@@ -31,11 +31,16 @@ pub enum Expression {
         consequence: Rc<Expression>,
         alternative: Option<Rc<Expression>>,
     },
+    While {
+        condition: Rc<Expression>,
+        body: Rc<Expression>,
+    },
     Program(Rc<[Node]>),
 }
 
 fn get_infix_binding_power(operator: &str) -> Option<(u8, u8)> {
     match operator {
+        "==" | "<" | ">" => Some((1, 2)),
         "+" | "-" => Some((3, 4)),
         "*" | "/" => Some((5, 6)),
         _ => None,
@@ -153,6 +158,11 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     consequence,
                     alternative,
                 }
+            }
+            Some(Token::Keyword(k)) if k == "while" => {
+                let condition = Rc::new(parse_expression(tokens)?);
+                let body = Rc::new(parse_block(tokens)?);
+                Expression::While { condition, body }
             }
             Some(t) => {
                 return Err(MovaError::Parser(format!("Unexpected token found: {t:?}",)));

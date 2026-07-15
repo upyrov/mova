@@ -21,6 +21,9 @@ fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Resu
             }
             Ok(Value::Number(l / r))
         }
+        ("<", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l < r)),
+        (">", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l > r)),
+        ("==", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l == r)),
         (o, l, r) => Err(MovaError::Runtime(format!(
             "Unexpected operator '{o}' for operands '{l:?}' and '{r:?}'",
         ))),
@@ -214,6 +217,28 @@ fn evaluate_expression(
                 }
                 _ => Err(MovaError::Runtime("Condition must be a boolean".into())),
             }
+        }
+        Expression::While { condition, body } => {
+            let mut result = None;
+            loop {
+                let condition_value = evaluate(
+                    Rc::new(Node::Expression(Rc::clone(condition))),
+                    Rc::clone(&scope),
+                )?
+                .ok_or_else(|| MovaError::Runtime("Condition yielded no value".into()))?;
+
+                match condition_value {
+                    Value::Boolean(true) => {
+                        result = evaluate(
+                            Rc::new(Node::Expression(Rc::clone(body))),
+                            Rc::clone(&scope),
+                        )?;
+                    }
+                    Value::Boolean(false) => break,
+                    _ => return Err(MovaError::Runtime("Condition must be a boolean".into())),
+                }
+            }
+            Ok(result)
         }
         Expression::Program(p) => {
             let mut result = None;
@@ -515,5 +540,18 @@ mod tests {
         ";
         let result = run(input);
         assert_eq!(result.unwrap(), Some(Value::Number(40)));
+    }
+
+    #[test]
+    fn test_while_loop() {
+        let input = "
+            let mut x = 0;
+            while x < 5 {
+                x = x + 1;
+            }
+            x
+        ";
+        let result = run(input);
+        assert_eq!(result.unwrap(), Some(Value::Number(5)));
     }
 }
