@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    error::{MovaError, Result},
+    error::{MovaError, Result, RuntimeError},
     interpreter::data::{Data, Slot, State, Value},
 };
 
@@ -26,19 +26,19 @@ impl Reference {
 
         if let Value::Moved = data.value {
             return Err(MovaError::Runtime(
-                "Unable to borrow value because it is moved".into(),
+                RuntimeError::UnableToBorrowBecauseMoved,
             ));
         }
 
         match data.state {
             State::Deallocated => Err(MovaError::Runtime(
-                "Unable to borrow value because it is deallocated".into(),
+                RuntimeError::UnableToBorrowBecauseDeallocated,
             )),
             State::MutablyBorrowed => Err(MovaError::Runtime(
-                "Unable to borrow because it is already mutably borrowed".into(),
+                RuntimeError::UnableToBorrowBecauseMutablyBorrowed,
             )),
             State::Borrowed(_) if is_mutable => Err(MovaError::Runtime(
-                "Unable to borrow mutably because it is already borrowed".into(),
+                RuntimeError::UnableToBorrowMutablyBecauseBorrowed,
             )),
             State::Borrowed(count) => {
                 data.state = State::Borrowed(count + 1);
@@ -65,7 +65,7 @@ impl Reference {
         let data = self.slot.borrow();
         if let State::Deallocated = data.state {
             return Err(MovaError::Runtime(
-                "Accessing a deallocated reference".into(),
+                RuntimeError::AccessingDeallocatedReference,
             ));
         }
         Ok(data)
@@ -76,7 +76,7 @@ impl Reference {
 
         if let State::Deallocated = data.state {
             return Err(MovaError::Runtime(
-                "Assigning to a deallocated reference".into(),
+                RuntimeError::AssigningToDeallocatedReference,
             ));
         }
 
@@ -85,7 +85,7 @@ impl Reference {
         }
 
         Err(MovaError::Runtime(
-            "Cannot assign to an immutable reference".into(),
+            RuntimeError::CannotAssignToImmutableReference,
         ))
     }
 }

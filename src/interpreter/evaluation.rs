@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    error::{MovaError, Result},
+    error::{MovaError, Result, RuntimeError},
     interpreter::{
         data::{Data, Slot, State, Value},
         reference::Reference,
@@ -17,16 +17,18 @@ fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Resu
         ("*", Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
         ("/", Value::Number(l), Value::Number(r)) => {
             if r == 0 {
-                return Err(MovaError::Runtime("Division by zero".into()));
+                return Err(MovaError::Runtime(RuntimeError::DivisionByZero));
             }
             Ok(Value::Number(l / r))
         }
         ("<", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l < r)),
         (">", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l > r)),
         ("==", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l == r)),
-        (o, l, r) => Err(MovaError::Runtime(format!(
-            "Unexpected operator '{o}' for operands '{l:?}' and '{r:?}'",
-        ))),
+        (o, l, r) => Err(MovaError::Runtime(RuntimeError::UnexpectedOperator {
+            operator: o.to_string(),
+            left: format!("{l:?}"),
+            right: format!("{r:?}"),
+        })),
     }
 }
 
@@ -46,9 +48,10 @@ fn evaluate_call(
             let argument_count = arguments.len();
             let parameter_count = parameters.len();
             if argument_count != parameter_count {
-                return Err(MovaError::Runtime(format!(
-                    "Expected {parameter_count} arguments but received {argument_count}",
-                )));
+                return Err(MovaError::Runtime(RuntimeError::InvalidArgumentCount {
+                    expected: parameter_count,
+                    received: argument_count,
+                }));
             }
 
             let evaluated_arguments: Vec<Value> = arguments
@@ -56,7 +59,7 @@ fn evaluate_call(
                 .map(|argument| {
                     let node = Rc::new(Node::Expression(Rc::new(argument.clone())));
                     let value = evaluate(node, Rc::clone(&scope))?.ok_or(MovaError::Runtime(
-                        "Expected expression, but received statement as argument".into(),
+                        RuntimeError::ExpectedExpressionAsArgument,
                     ))?;
                     Ok(value)
                 })
@@ -84,14 +87,14 @@ fn evaluate_call(
 
             result
         }
-        _ => Err(MovaError::Runtime(format!("'{name}' is not callable",))),
+        _ => Err(MovaError::Runtime(RuntimeError::NotCallable(name.to_string()))),
     }
 }
 
 fn evaluate_slot(expression: &Expression, scope: Rc<RefCell<Scope>>) -> Result<Slot> {
     match expression {
         Expression::Identifier(name) => scope.borrow().find_slot(name),
-        _ => Err(MovaError::Runtime("Expression cannot be referenced".into())),
+        _ => Err(MovaError::Runtime(RuntimeError::ExpressionCannotBeReferenced)),
     }
 }
 
@@ -120,7 +123,7 @@ fn evaluate_expression(
                     Rc::clone(&scope),
                 )?
                 .ok_or(MovaError::Runtime(
-                    "Reference target yielded no value".into(),
+                    RuntimeError::ReferenceTargetYieldedNoValue,
                 ))?;
 
                 Rc::new(RefCell::new(Data {
@@ -143,7 +146,7 @@ fn evaluate_expression(
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Expected expression, but received statement as left operand".into(),
+                RuntimeError::ExpectedExpressionAsLeftOperand,
             ))?;
 
             let right = evaluate(
@@ -151,7 +154,7 @@ fn evaluate_expression(
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Expected expression, but received statement as right operand".into(),
+                RuntimeError::ExpectedExpressionAsRightOperand,
             ))?;
 
             Ok(Some(evaluate_binary_expression(operator, left, right)?))
@@ -163,18 +166,18 @@ fn evaluate_expression(
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Dereference target yielded no value".into(),
+                RuntimeError::DereferenceTargetYieldedNoValue,
             ))?;
 
             if let Value::Reference(r) = val {
                 let data = r.read()?;
                 if let Value::Moved = data.value {
-                    return Err(MovaError::Runtime("Cannot read from moved value".into()));
+                    return Err(MovaError::Runtime(RuntimeError::CannotReadFromMovedValue));
                 }
                 Ok(Some(data.value.clone()))
             } else {
                 Err(MovaError::Runtime(
-                    "Cannot dereference non-reference value".into(),
+                    RuntimeError::CannotDereferenceNonReferenceValue,
                 ))
             }
         }
@@ -198,7 +201,7 @@ fn evaluate_expression(
                 Rc::new(Node::Expression(Rc::clone(condition))),
                 Rc::clone(&scope),
             )?
-            .ok_or_else(|| MovaError::Runtime("Condition yielded no value".into()))?;
+            .ok_or_else(|| MovaError::Runtime(RuntimeError::ConditionYieldedNoValue))?;
 
             match condition_value {
                 Value::Boolean(true) => evaluate(
@@ -215,7 +218,7 @@ fn evaluate_expression(
                         Ok(None)
                     }
                 }
-                _ => Err(MovaError::Runtime("Condition must be a boolean".into())),
+                _ => Err(MovaError::Runtime(RuntimeError::ConditionMustBeBoolean)),
             }
         }
         Expression::While { condition, body } => {
@@ -225,7 +228,7 @@ fn evaluate_expression(
                     Rc::new(Node::Expression(Rc::clone(condition))),
                     Rc::clone(&scope),
                 )?
-                .ok_or_else(|| MovaError::Runtime("Condition yielded no value".into()))?;
+                .ok_or_else(|| MovaError::Runtime(RuntimeError::ConditionYieldedNoValue))?;
 
                 match condition_value {
                     Value::Boolean(true) => {
@@ -235,7 +238,7 @@ fn evaluate_expression(
                         )?;
                     }
                     Value::Boolean(false) => break,
-                    _ => return Err(MovaError::Runtime("Condition must be a boolean".into())),
+                    _ => return Err(MovaError::Runtime(RuntimeError::ConditionMustBeBoolean)),
                 }
             }
             Ok(result)
@@ -262,7 +265,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Expected expression, but received statement as value".into(),
+                RuntimeError::ExpectedExpressionAsValue,
             ))?;
             scope.borrow_mut().declare(name, value, *is_mutable);
         }
@@ -272,7 +275,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Expected expression, but received statement as value".into(),
+                RuntimeError::ExpectedExpressionAsValue,
             ))?;
 
             let slot = scope.borrow().find_slot(name)?;
@@ -281,17 +284,17 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
             match data.state {
                 State::Deallocated => {
                     return Err(MovaError::Runtime(
-                        format!("Cannot assign to deallocated variable '{}'", name).into(),
+                        RuntimeError::CannotAssignToDeallocatedVariable(name.to_string()),
                     ));
                 }
                 State::Borrowed(count) if count > 0 => {
                     return Err(MovaError::Runtime(
-                        format!("Cannot assign to borrowed variable '{}'", name).into(),
+                        RuntimeError::CannotAssignToBorrowedVariable(name.to_string()),
                     ));
                 }
                 State::MutablyBorrowed => {
                     return Err(MovaError::Runtime(
-                        format!("Cannot assign to mutably borrowed variable '{}'", name).into(),
+                        RuntimeError::CannotAssignToMutablyBorrowedVariable(name.to_string()),
                     ));
                 }
                 _ => {}
@@ -301,7 +304,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 data.value = new_value;
             } else {
                 return Err(MovaError::Runtime(
-                    format!("Cannot assign to immutable variable '{}'", name).into(),
+                    RuntimeError::CannotAssignToImmutableVariable(name.to_string()),
                 ));
             }
         }
@@ -323,7 +326,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Dereference target yielded no value".into(),
+                RuntimeError::DereferenceTargetYieldedNoValue,
             ))?;
 
             let new_value = evaluate(
@@ -331,7 +334,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::clone(&scope),
             )?
             .ok_or(MovaError::Runtime(
-                "Assignment value yielded no value".into(),
+                RuntimeError::AssignmentValueYieldedNoValue,
             ))?;
 
             if let Value::Reference(r) = target_val {
@@ -339,7 +342,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 data.value = new_value;
             } else {
                 return Err(MovaError::Runtime(
-                    "Cannot dereference non-reference value".into(),
+                    RuntimeError::CannotDereferenceNonReferenceValue,
                 ));
             }
         }

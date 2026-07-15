@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    error::{MovaError, Result},
+    error::{MovaError, Result, RuntimeError},
     interpreter::data::{Data, Slot, State, Value},
 };
 
@@ -44,7 +44,7 @@ impl Scope {
 
         match &self.parent {
             Some(p) => p.borrow().find_slot(name),
-            None => Err(MovaError::Runtime(format!("Unable to resolve {name}"))),
+            None => Err(MovaError::Runtime(RuntimeError::UnableToResolve(name.to_string()))),
         }
     }
 
@@ -53,15 +53,11 @@ impl Scope {
         let mut data = slot.borrow_mut();
 
         if let State::Deallocated = data.state {
-            return Err(MovaError::Runtime(format!(
-                "Unable to use '{name}' because it has been deallocated (out of scope)"
-            )));
+            return Err(MovaError::Runtime(RuntimeError::UnableToUseBecauseDeallocated(name.to_string())));
         }
 
         if matches!(data.state, State::MutablyBorrowed) {
-            return Err(MovaError::Runtime(format!(
-                "Unable to use '{name}' because it is mutably borrowed"
-            )));
+            return Err(MovaError::Runtime(RuntimeError::UnableToMutateBecauseMutablyBorrowed(name.to_string())));
         }
 
         match &data.value {
@@ -69,18 +65,14 @@ impl Scope {
                 Ok(data.value.clone())
             }
             Value::Moved => {
-                return Err(MovaError::Runtime(format!(
-                    "Unable to use '{name}' because it is moved"
-                )));
+                return Err(MovaError::Runtime(RuntimeError::UnableToUseBecauseMoved(name.to_string())));
             }
             _ => {
                 if matches!(
                     data.state,
                     State::Borrowed(count) if count > 0
                 ) {
-                    return Err(MovaError::Runtime(format!(
-                        "Unable to move {name}' because it is borrowed"
-                    )));
+                    return Err(MovaError::Runtime(RuntimeError::UnableToMutateBecauseImmutablyBorrowed(name.to_string())));
                 }
 
                 Ok(std::mem::replace(&mut data.value, Value::Moved))

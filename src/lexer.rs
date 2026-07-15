@@ -82,7 +82,7 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
             '{' | '}' | ',' | ';' => tokens.push(Token::SpecialCharacter(c)),
             _ => {
                 return Err(MovaError::Lexer {
-                    message: format!("Unexpected character: '{c}'",),
+                    character: c,
                     position: Position { line, character: i },
                 });
             }

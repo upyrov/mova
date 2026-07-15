@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    error::{MovaError, Result},
+    error::{MovaError, ParserError, Result},
     lexer::Token,
     parser::{expression::*, node::Node},
 };
@@ -39,13 +39,11 @@ fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
     let name = Rc::new(match tokens.pop() {
         Some(Token::Identifier(i)) => i,
         Some(t) => {
-            return Err(MovaError::Parser(format!(
-                "Expected identifier but got: {t:?}"
-            )));
+            return Err(MovaError::Parser(ParserError::ExpectedIdentifierButGot(format!("{t:?}"))));
         }
         None => {
             return Err(MovaError::Parser(
-                "Expected identifier after `let` keyword".into(),
+                ParserError::ExpectedIdentifierAfterLet,
             ));
         }
     });
@@ -59,9 +57,9 @@ fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
                 is_mutable,
             })))
         }
-        Some(t) => Err(MovaError::Parser(format!("Unexpected token found: {t:?}"))),
+        Some(t) => Err(MovaError::Parser(ParserError::UnexpectedToken(format!("{t:?}")))),
         None => Err(MovaError::Parser(
-            "Expected assignment after identifier".into(),
+            ParserError::ExpectedAssignmentAfterIdentifier,
         )),
     }
 }
@@ -73,7 +71,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
         Some(Token::Identifier(i)) => i,
         _ => {
             return Err(MovaError::Parser(
-                "Expected function name after `fn` keyword".into(),
+                ParserError::ExpectedFunctionName,
             ));
         }
     });
@@ -81,7 +79,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
         Some(Token::Operator(o)) if o == "(" => {}
         _ => {
             return Err(MovaError::Parser(
-                "Expected parameter list after function name".into(),
+                ParserError::ExpectedParameterList,
             ));
         }
     }
@@ -101,7 +99,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
             },
             None => {
                 return Err(MovaError::Parser(
-                    "Expected parameter list to be closed".into(),
+                    ParserError::ExpectedParameterListToBeClosed,
                 ));
             }
         }
@@ -111,7 +109,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
         Some(Token::Operator(o)) if o == ")" => {}
         _ => {
             return Err(MovaError::Parser(
-                "Expected parameter list to be closed".into(),
+                ParserError::ExpectedParameterListToBeClosed,
             ));
         }
     }
@@ -119,7 +117,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
     match tokens.pop() {
         Some(Token::Assignment) => {}
         _ => Err(MovaError::Parser(
-            "Expected assignment before function body".into(),
+            ParserError::ExpectedAssignmentBeforeFunctionBody,
         ))?,
     }
 
@@ -166,7 +164,7 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
                 e => Ok(Node::Expression(Rc::new(e))),
             }
         }
-        None => Err(MovaError::Parser("Unexpected end of input".into())),
+        None => Err(MovaError::Parser(ParserError::UnexpectedEndOfInput)),
     }?;
 
     while let Some(Token::SpecialCharacter(';')) = tokens.last() {

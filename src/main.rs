@@ -3,6 +3,8 @@ use std::{env, fs};
 use mova::{interpreter::Value, runner::run};
 
 fn main() {
+    ctrlc::set_handler(move || std::process::exit(0)).expect("Error setting Ctrl-C handler");
+
     let args: Vec<String> = env::args().collect();
     let paths = &args[1..];
 
