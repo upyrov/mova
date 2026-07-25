@@ -1,7 +1,7 @@
 use crate::error::{MovaError, Position, Result};
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Token {
+pub enum TokenKind {
     Keyword(String),
     Identifier(String),
     Number(String),
@@ -11,31 +11,45 @@ pub enum Token {
     SpecialCharacter(char),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub position: Position,
+}
+
 pub fn tokenize(input: &str) -> Result<Vec<Token>> {
     let mut tokens = Vec::new();
     let mut input = input.char_indices().peekable();
     let mut line = 1;
+    let mut line_start_index = 0;
 
     while let Some((i, c)) = input.next() {
         if c.is_whitespace() {
             if c == '\n' {
                 line += 1;
+                line_start_index = i + 1;
             }
             continue;
         }
+
+        let position = Position {
+            line,
+            character: i - line_start_index,
+        };
 
         match c {
             '/' => {
                 if let Some((_, '/')) = input.peek() {
                     input.next();
-                    while let Some((_, n)) = input.next() {
+                    while let Some((n_i, n)) = input.next() {
                         if n == '\n' {
                             line += 1;
+                            line_start_index = n_i + 1;
                             break;
                         }
                     }
                 } else {
-                    tokens.push(Token::Operator(c.into()));
+                    tokens.push(Token { kind: TokenKind::Operator(c.into()), position });
                 }
             }
             'a'..='z' | 'A'..='Z' | '_' => {
@@ -49,41 +63,50 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                         _ => break,
                     }
                 }
-                let token = match value.as_str() {
-                    "let" | "mut" | "fn" | "if" | "else" | "while" => Token::Keyword(value),
-                    "true" => Token::Boolean(true),
-                    "false" => Token::Boolean(false),
-                    _ => Token::Identifier(value),
+                let kind = match value.as_str() {
+                    "let" | "mut" | "fn" | "if" | "else" | "while" => TokenKind::Keyword(value),
+                    "true" => TokenKind::Boolean(true),
+                    "false" => TokenKind::Boolean(false),
+                    _ => TokenKind::Identifier(value),
                 };
-                tokens.push(token);
+                tokens.push(Token { kind, position });
             }
             '0'..='9' => {
                 let mut value = String::from(c);
-                while let Some((_, l)) = input.peek() {
+                while let Some(&(idx, l)) = input.peek() {
                     match l {
                         '0'..='9' => {
                             let (_, next) = input.next().unwrap();
                             value += &next.to_string()
                         }
+                        'a'..='z' | 'A'..='Z' | '_' => {
+                            return Err(MovaError::Lexer {
+                                character: l,
+                                position: Position {
+                                    line,
+                                    character: idx - line_start_index,
+                                },
+                            });
+                        }
                         _ => break,
                     }
                 }
-                tokens.push(Token::Number(value));
+                tokens.push(Token { kind: TokenKind::Number(value), position });
             }
-            '+' | '-' | '*' | '(' | ')' | '&' | '<' | '>' => tokens.push(Token::Operator(c.into())),
+            '+' | '-' | '*' | '(' | ')' | '&' | '<' | '>' => tokens.push(Token { kind: TokenKind::Operator(c.into()), position }),
             '=' => {
                 if let Some((_, '=')) = input.peek() {
                     input.next();
-                    tokens.push(Token::Operator("==".into()));
+                    tokens.push(Token { kind: TokenKind::Operator("==".into()), position });
                 } else {
-                    tokens.push(Token::Assignment);
+                    tokens.push(Token { kind: TokenKind::Assignment, position });
                 }
             }
-            '{' | '}' | ',' | ';' => tokens.push(Token::SpecialCharacter(c)),
+            '{' | '}' | ',' | ';' => tokens.push(Token { kind: TokenKind::SpecialCharacter(c), position }),
             _ => {
                 return Err(MovaError::Lexer {
                     character: c,
-                    position: Position { line, character: i },
+                    position,
                 });
             }
         }
@@ -96,64 +119,73 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
 mod tests {
     use super::*;
 
+    fn assert_tokens(input: &str, expected_kinds: Vec<TokenKind>) -> Result<()> {
+        let tokens = tokenize(input)?;
+        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+        assert_eq!(kinds, expected_kinds);
+        Ok(())
+    }
+
     #[test]
     fn it_tokenizes_identifier() -> Result<()> {
-        let identifiers = vec![
-            Token::Identifier("Mova".into()),
-            Token::Identifier("loves".into()),
-            Token::Identifier("ownership".into()),
-        ];
-        assert_eq!(tokenize("Mova loves ownership")?, identifiers);
-        Ok(())
+        assert_tokens(
+            "Mova loves ownership",
+            vec![
+                TokenKind::Identifier("Mova".into()),
+                TokenKind::Identifier("loves".into()),
+                TokenKind::Identifier("ownership".into()),
+            ],
+        )
     }
 
     #[test]
     fn it_tokenizes_number() -> Result<()> {
-        let numbers = vec![
-            Token::Number("2342345".into()),
-            Token::Number("123456789".into()),
-            Token::Number("314".into()),
-            Token::Number("1".into()),
-        ];
-        assert_eq!(tokenize("2342345 123456789 314 1")?, numbers);
-        Ok(())
+        assert_tokens(
+            "2342345 123456789 314 1",
+            vec![
+                TokenKind::Number("2342345".into()),
+                TokenKind::Number("123456789".into()),
+                TokenKind::Number("314".into()),
+                TokenKind::Number("1".into()),
+            ],
+        )
     }
 
     #[test]
     fn it_tokenizes_operator() -> Result<()> {
-        let operators = vec![
-            Token::Operator('+'.into()),
-            Token::Operator('-'.into()),
-            Token::Operator('-'.into()),
-            Token::Operator('/'.into()),
-        ];
-        assert_eq!(tokenize("+-- /")?, operators);
-        Ok(())
+        assert_tokens(
+            "+-- /",
+            vec![
+                TokenKind::Operator('+'.into()),
+                TokenKind::Operator('-'.into()),
+                TokenKind::Operator('-'.into()),
+                TokenKind::Operator('/'.into()),
+            ],
+        )
     }
 
     #[test]
     fn it_tokenizes_special_character() -> Result<()> {
-        let special_characters = vec![
-            Token::SpecialCharacter('{'.into()),
-            Token::SpecialCharacter('}'.into()),
-            Token::SpecialCharacter('}'.into()),
-        ];
-        assert_eq!(tokenize("{}}")?, special_characters);
-        Ok(())
+        assert_tokens(
+            "{}}",
+            vec![
+                TokenKind::SpecialCharacter('{'.into()),
+                TokenKind::SpecialCharacter('}'.into()),
+                TokenKind::SpecialCharacter('}'.into()),
+            ],
+        )
     }
 
     #[test]
     fn it_tokenizes_assignment() -> Result<()> {
-        assert_eq!(tokenize("=")?, vec![Token::Assignment]);
-        Ok(())
+        assert_tokens("=", vec![TokenKind::Assignment])
     }
 
     #[test]
     fn it_skips_comment() -> Result<()> {
-        assert_eq!(
-            tokenize("1 // comment here\n2")?,
-            vec![Token::Number("1".into()), Token::Number("2".into())]
-        );
-        Ok(())
+        assert_tokens(
+            "1 // comment here\n2",
+            vec![TokenKind::Number("1".into()), TokenKind::Number("2".into())],
+        )
     }
 }

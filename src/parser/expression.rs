@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use crate::{
     error::{MovaError, ParserError, Result},
-    lexer::Token,
-    parser::{node::Node, statement::parse_statement},
+    lexer::{Token, TokenKind},
+    parser::{node::Node, statement::parse_statement, current_position},
 };
 
 #[derive(Clone, Debug)]
@@ -55,16 +55,18 @@ fn get_postfix_binding_power(operator: &str) -> Option<(u8, ())> {
 }
 
 fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
+    let pos_start = current_position(tokens);
     tokens.pop();
     let mut parameters = Vec::new();
 
     loop {
-        match tokens.last() {
-            Some(Token::Operator(o)) if o == ")" => {
+        let pos_loop = current_position(tokens);
+        match tokens.last().map(|t| &t.kind) {
+            Some(TokenKind::Operator(o)) if o == ")" => {
                 tokens.pop();
                 break;
             }
-            Some(Token::SpecialCharacter(')')) => {
+            Some(TokenKind::SpecialCharacter(')')) => {
                 tokens.pop();
                 break;
             }
@@ -72,28 +74,32 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
                 let argument = parse_expression(tokens)?;
                 parameters.push(argument);
 
-                match tokens.last() {
-                    Some(Token::SpecialCharacter(',')) => {
+                let pos_comma = current_position(tokens);
+                match tokens.last().map(|t| &t.kind) {
+                    Some(TokenKind::SpecialCharacter(',')) => {
                         tokens.pop();
                     }
-                    Some(Token::Operator(o)) if o == ")" => {}
-                    Some(Token::SpecialCharacter(')')) => {}
+                    Some(TokenKind::Operator(o)) if o == ")" => {}
+                    Some(TokenKind::SpecialCharacter(')')) => {}
                     None => {
-                        return Err(MovaError::Parser(
-                            ParserError::ExpectedArgumentListToBeClosed,
-                        ));
+                        return Err(MovaError::Parser {
+                            error: ParserError::ExpectedArgumentListToBeClosed,
+                            position: pos_comma,
+                        });
                     }
                     _ => {
-                        return Err(MovaError::Parser(
-                            ParserError::ExpectedCommaOrArgumentListToBeClosed,
-                        ));
+                        return Err(MovaError::Parser {
+                            error: ParserError::ExpectedCommaOrArgumentListToBeClosed,
+                            position: pos_comma,
+                        });
                     }
                 }
             }
             None => {
-                return Err(MovaError::Parser(
-                    ParserError::ExpectedArgumentListToBeClosed,
-                ));
+                return Err(MovaError::Parser {
+                    error: ParserError::ExpectedArgumentListToBeClosed,
+                    position: pos_loop,
+                });
             }
         }
     }
@@ -103,77 +109,84 @@ fn parse_call(tokens: &mut Vec<Token>, left: Expression) -> Result<Expression> {
             name: i,
             arguments: parameters.into(),
         }),
-        e => Err(MovaError::Parser(ParserError::ExpectedIdentifierToBeCalled(format!("{e:?}")))),
+        e => Err(MovaError::Parser {
+            error: ParserError::ExpectedIdentifierToBeCalled(format!("{e:?}")),
+            position: pos_start,
+        }),
     }
 }
 
 fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result<Expression> {
-    let mut left = match tokens.last() {
-        Some(Token::Operator(op)) if op == "&" => {
+    let mut left = match tokens.last().map(|t| &t.kind) {
+        Some(TokenKind::Operator(op)) if op == "&" => {
             tokens.pop();
             parse_reference(tokens)?
         }
-        Some(Token::Operator(op)) if op == "*" => {
+        Some(TokenKind::Operator(op)) if op == "*" => {
             tokens.pop();
             Expression::Dereference(Rc::new(parse_binary_expression(tokens, 7)?))
         }
-        Some(Token::Operator(op)) if op == "(" => {
+        Some(TokenKind::Operator(op)) if op == "(" => {
             tokens.pop();
             let expr = parse_expression(tokens)?;
-            match tokens.pop() {
-                Some(Token::Operator(op)) if op == ")" => Ok(expr),
-                Some(t) => Err(MovaError::Parser(ParserError::ExpectedClosingParenthesis(format!("{t:?}")))),
-                None => Err(MovaError::Parser(ParserError::ExpectedClosingParenthesisButFoundEndOfInput)),
+            let pos_close = current_position(tokens);
+            match tokens.pop().map(|t| t.kind) {
+                Some(TokenKind::Operator(op)) if op == ")" => Ok(expr),
+                Some(t) => Err(MovaError::Parser { error: ParserError::ExpectedClosingParenthesis(format!("{t:?}")), position: pos_close }),
+                None => Err(MovaError::Parser { error: ParserError::ExpectedClosingParenthesisButFoundEndOfInput, position: pos_close }),
             }?
         }
-        _ => match tokens.pop() {
-            Some(Token::Identifier(i)) => Expression::Identifier(Rc::new(i)),
-            Some(Token::Number(n)) => Expression::Number(
-                n.parse()
-                    .map_err(|_| MovaError::Parser(ParserError::InvalidNumber(n)))?,
-            ),
-            Some(Token::Boolean(b)) => Expression::Boolean(b),
-            Some(Token::Keyword(k)) if k == "if" => {
-                let condition = Rc::new(parse_expression(tokens)?);
-                let consequence = Rc::new(parse_block(tokens)?);
-                let alternative = match tokens.last() {
-                    Some(Token::Keyword(k)) if k == "else" => {
-                        tokens.pop();
-                        if let Some(Token::Keyword(next_k)) = tokens.last() {
-                            if next_k == "if" {
-                                Some(Rc::new(parse_expression(tokens)?))
+        _ => {
+            let pos_pop = current_position(tokens);
+            match tokens.pop().map(|t| t.kind) {
+                Some(TokenKind::Identifier(i)) => Expression::Identifier(Rc::new(i)),
+                Some(TokenKind::Number(n)) => Expression::Number(
+                    n.parse()
+                        .map_err(|_| MovaError::Parser { error: ParserError::InvalidNumber(n), position: pos_pop.clone() })?,
+                ),
+                Some(TokenKind::Boolean(b)) => Expression::Boolean(b),
+                Some(TokenKind::Keyword(k)) if k == "if" => {
+                    let condition = Rc::new(parse_expression(tokens)?);
+                    let consequence = Rc::new(parse_block(tokens)?);
+                    let alternative = match tokens.last().map(|t| &t.kind) {
+                        Some(TokenKind::Keyword(k)) if k == "else" => {
+                            tokens.pop();
+                            if let Some(TokenKind::Keyword(next_k)) = tokens.last().map(|t| &t.kind) {
+                                if next_k == "if" {
+                                    Some(Rc::new(parse_expression(tokens)?))
+                                } else {
+                                    Some(Rc::new(parse_block(tokens)?))
+                                }
                             } else {
                                 Some(Rc::new(parse_block(tokens)?))
                             }
-                        } else {
-                            Some(Rc::new(parse_block(tokens)?))
                         }
+                        _ => None,
+                    };
+                    Expression::If {
+                        condition,
+                        consequence,
+                        alternative,
                     }
-                    _ => None,
-                };
-                Expression::If {
-                    condition,
-                    consequence,
-                    alternative,
                 }
-            }
-            Some(Token::Keyword(k)) if k == "while" => {
-                let condition = Rc::new(parse_expression(tokens)?);
-                let body = Rc::new(parse_block(tokens)?);
-                Expression::While { condition, body }
-            }
-            Some(t) => {
-                return Err(MovaError::Parser(ParserError::UnexpectedToken(format!("{t:?}"))));
-            }
-            None => {
-                return Err(MovaError::Parser(ParserError::UnexpectedEndOfInput));
+                Some(TokenKind::Keyword(k)) if k == "while" => {
+                    let condition = Rc::new(parse_expression(tokens)?);
+                    let body = Rc::new(parse_block(tokens)?);
+                    Expression::While { condition, body }
+                }
+                Some(t) => {
+                    return Err(MovaError::Parser { error: ParserError::UnexpectedToken(format!("{t:?}")), position: pos_pop });
+                }
+                None => {
+                    return Err(MovaError::Parser { error: ParserError::UnexpectedEndOfInput, position: pos_pop });
+                }
             }
         },
     };
 
-    while let Some(t) = tokens.last().cloned() {
+    while let Some(t) = tokens.last().map(|t| t.kind.clone()) {
         match t {
-            Token::Operator(o) => {
+            TokenKind::Operator(o) => {
                 if let Some((lbp, ())) = get_postfix_binding_power(&o) {
                     if lbp < binding_power {
                         break;
@@ -201,7 +214,7 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
 
                 break;
             }
-            Token::SpecialCharacter('(') => {
+            TokenKind::SpecialCharacter('(') => {
                 if let Some((lbp, ())) = get_postfix_binding_power("(") {
                     if lbp < binding_power {
                         break;
@@ -219,7 +232,7 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
 }
 
 fn parse_reference(tokens: &mut Vec<Token>) -> Result<Expression> {
-    let is_mutable = matches!(tokens.last(), Some(Token::Keyword(k)) if k == "mut");
+    let is_mutable = matches!(tokens.last().map(|t| &t.kind), Some(TokenKind::Keyword(k)) if k == "mut");
     if is_mutable {
         tokens.pop();
     }
@@ -231,24 +244,26 @@ fn parse_reference(tokens: &mut Vec<Token>) -> Result<Expression> {
 }
 
 fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
-    match tokens.last() {
-        Some(Token::SpecialCharacter('{')) => {
+    match tokens.last().map(|t| &t.kind) {
+        Some(TokenKind::SpecialCharacter('{')) => {
             tokens.pop();
             let mut body = Vec::new();
 
             loop {
-                match tokens.last() {
-                    Some(Token::SpecialCharacter('}')) => break,
+                let pos_loop = current_position(tokens);
+                match tokens.last().map(|t| &t.kind) {
+                    Some(TokenKind::SpecialCharacter('}')) => break,
                     Some(_) => body.push(parse_statement(tokens)?),
                     None => {
-                        return Err(MovaError::Parser(ParserError::ExpectedBlockToBeClosed));
+                        return Err(MovaError::Parser { error: ParserError::ExpectedBlockToBeClosed, position: pos_loop });
                     }
                 }
             }
 
-            match tokens.pop() {
-                Some(Token::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
-                _ => Err(MovaError::Parser(ParserError::ExpectedBlockToBeClosed)),
+            let pos_close = current_position(tokens);
+            match tokens.pop().map(|t| t.kind) {
+                Some(TokenKind::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
+                _ => Err(MovaError::Parser { error: ParserError::ExpectedBlockToBeClosed, position: pos_close }),
             }
         }
         _ => parse_binary_expression(tokens, 0),

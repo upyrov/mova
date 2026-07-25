@@ -17,8 +17,8 @@ impl fmt::Display for Position {
 pub enum MovaError {
     #[error("Lexer error at {position}: Unexpected character: '{character}'")]
     Lexer { character: char, position: Position },
-    #[error("Parser error: {0}")]
-    Parser(#[from] ParserError),
+    #[error("Parser error at {position}: {error}")]
+    Parser { error: ParserError, position: Position },
     #[error("Runtime error: {0}")]
     Runtime(#[from] RuntimeError),
 }
