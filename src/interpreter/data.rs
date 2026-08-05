@@ -8,6 +8,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum Value {
     Number(i32),
+    String(Rc<str>),
     Boolean(bool),
     Function {
         parameters: Rc<[String]>,
@@ -25,6 +26,7 @@ impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "{}", s),
             Value::Boolean(b) => write!(f, "{}", b),
             Value::Function { .. } => write!(f, "<function>"),
             Value::BuiltInFunction { .. } => write!(f, "<built-in function>"),
@@ -41,6 +43,7 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l == r,
+            (Value::String(l), Value::String(r)) => l == r,
             (Value::Boolean(l), Value::Boolean(r)) => l == r,
             (Value::Reference(l), Value::Reference(r)) => l == r,
             (Value::Moved, Value::Moved) => true,

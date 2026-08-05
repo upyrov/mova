@@ -3,12 +3,13 @@ use std::rc::Rc;
 use crate::{
     error::{MovaError, ParserError, Result},
     lexer::{Token, TokenKind},
-    parser::{node::Node, statement::parse_statement, current_position},
+    parser::{current_position, node::Node, statement::parse_statement},
 };
 
 #[derive(Clone, Debug)]
 pub enum Expression {
     Number(i32),
+    String(Rc<str>),
     Boolean(bool),
     Identifier(Rc<String>),
     Reference {
@@ -132,18 +133,27 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
             let pos_close = current_position(tokens);
             match tokens.pop().map(|t| t.kind) {
                 Some(TokenKind::Operator(op)) if op == ")" => Ok(expr),
-                Some(t) => Err(MovaError::Parser { error: ParserError::ExpectedClosingParenthesis(format!("{t:?}")), position: pos_close }),
-                None => Err(MovaError::Parser { error: ParserError::ExpectedClosingParenthesisButFoundEndOfInput, position: pos_close }),
+                Some(t) => Err(MovaError::Parser {
+                    error: ParserError::ExpectedClosingParenthesis(format!("{t:?}")),
+                    position: pos_close,
+                }),
+                None => Err(MovaError::Parser {
+                    error: ParserError::ExpectedClosingParenthesisButFoundEndOfInput,
+                    position: pos_close,
+                }),
             }?
         }
         _ => {
             let pos_pop = current_position(tokens);
             match tokens.pop().map(|t| t.kind) {
                 Some(TokenKind::Identifier(i)) => Expression::Identifier(Rc::new(i)),
-                Some(TokenKind::Number(n)) => Expression::Number(
-                    n.parse()
-                        .map_err(|_| MovaError::Parser { error: ParserError::InvalidNumber(n), position: pos_pop.clone() })?,
-                ),
+                Some(TokenKind::Number(n)) => {
+                    Expression::Number(n.parse().map_err(|_| MovaError::Parser {
+                        error: ParserError::InvalidNumber(n),
+                        position: pos_pop.clone(),
+                    })?)
+                }
+                Some(TokenKind::String(s)) => Expression::String(s.into()),
                 Some(TokenKind::Boolean(b)) => Expression::Boolean(b),
                 Some(TokenKind::Keyword(k)) if k == "if" => {
                     let condition = Rc::new(parse_expression(tokens)?);
@@ -151,7 +161,8 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     let alternative = match tokens.last().map(|t| &t.kind) {
                         Some(TokenKind::Keyword(k)) if k == "else" => {
                             tokens.pop();
-                            if let Some(TokenKind::Keyword(next_k)) = tokens.last().map(|t| &t.kind) {
+                            if let Some(TokenKind::Keyword(next_k)) = tokens.last().map(|t| &t.kind)
+                            {
                                 if next_k == "if" {
                                     Some(Rc::new(parse_expression(tokens)?))
                                 } else {
@@ -175,16 +186,25 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     Expression::While { condition, body }
                 }
                 Some(TokenKind::EndOfFile) => {
-                    return Err(MovaError::Parser { error: ParserError::UnexpectedEndOfInput, position: pos_pop });
+                    return Err(MovaError::Parser {
+                        error: ParserError::UnexpectedEndOfInput,
+                        position: pos_pop,
+                    });
                 }
                 Some(t) => {
-                    return Err(MovaError::Parser { error: ParserError::UnexpectedToken(format!("{t:?}")), position: pos_pop });
+                    return Err(MovaError::Parser {
+                        error: ParserError::UnexpectedToken(format!("{t:?}")),
+                        position: pos_pop,
+                    });
                 }
                 None => {
-                    return Err(MovaError::Parser { error: ParserError::UnexpectedEndOfInput, position: pos_pop });
+                    return Err(MovaError::Parser {
+                        error: ParserError::UnexpectedEndOfInput,
+                        position: pos_pop,
+                    });
                 }
             }
-        },
+        }
     };
 
     while let Some(t) = tokens.last().map(|t| t.kind.clone()) {
@@ -235,7 +255,8 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
 }
 
 fn parse_reference(tokens: &mut Vec<Token>) -> Result<Expression> {
-    let is_mutable = matches!(tokens.last().map(|t| &t.kind), Some(TokenKind::Keyword(k)) if k == "mut");
+    let is_mutable =
+        matches!(tokens.last().map(|t| &t.kind), Some(TokenKind::Keyword(k)) if k == "mut");
     if is_mutable {
         tokens.pop();
     }
@@ -258,7 +279,10 @@ fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
                     Some(TokenKind::SpecialCharacter('}')) => break,
                     Some(_) => body.push(parse_statement(tokens)?),
                     None => {
-                        return Err(MovaError::Parser { error: ParserError::ExpectedBlockToBeClosed, position: pos_loop });
+                        return Err(MovaError::Parser {
+                            error: ParserError::ExpectedBlockToBeClosed,
+                            position: pos_loop,
+                        });
                     }
                 }
             }
@@ -266,7 +290,10 @@ fn parse_block(tokens: &mut Vec<Token>) -> Result<Expression> {
             let pos_close = current_position(tokens);
             match tokens.pop().map(|t| t.kind) {
                 Some(TokenKind::SpecialCharacter('}')) => Ok(Expression::Block(body.into())),
-                _ => Err(MovaError::Parser { error: ParserError::ExpectedBlockToBeClosed, position: pos_close }),
+                _ => Err(MovaError::Parser {
+                    error: ParserError::ExpectedBlockToBeClosed,
+                    position: pos_close,
+                }),
             }
         }
         _ => parse_binary_expression(tokens, 0),

@@ -27,6 +27,8 @@ fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Resu
         (">=", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l >= r)),
         ("==", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l == r)),
         ("!=", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l != r)),
+        ("==", Value::String(l), Value::String(r)) => Ok(Value::Boolean(l == r)),
+        ("!=", Value::String(l), Value::String(r)) => Ok(Value::Boolean(l != r)),
         (o, l, r) => Err(MovaError::Runtime(RuntimeError::UnexpectedOperator {
             operator: o.to_string(),
             left: format!("{l:?}"),
@@ -147,6 +149,7 @@ fn evaluate_expression(
 ) -> Result<Option<Value>> {
     match &*expression {
         Expression::Number(n) => Ok(Some(Value::Number(*n))),
+        Expression::String(s) => Ok(Some(Value::String(Rc::clone(s)))),
         Expression::Boolean(b) => Ok(Some(Value::Boolean(*b))),
         Expression::Identifier(i) => {
             let val = scope.borrow_mut().resolve(i)?;

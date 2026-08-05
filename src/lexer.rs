@@ -5,6 +5,7 @@ pub enum TokenKind {
     Keyword(String),
     Identifier(String),
     Number(String),
+    String(String),
     Boolean(bool),
     Operator(String),
     Assignment,
@@ -101,6 +102,34 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                     kind: TokenKind::Number(value),
                     position,
                 });
+            }
+            '"' => {
+                let mut value = String::new();
+                let mut closed = false;
+                while let Some(&(_, l)) = input.peek() {
+                    match l {
+                        '"' => {
+                            input.next();
+                            closed = true;
+                            break;
+                        }
+                        _ => {
+                            let (_, next) = input.next().unwrap();
+                            value.push(next);
+                        }
+                    }
+                }
+                if closed {
+                    tokens.push(Token {
+                        kind: TokenKind::String(value),
+                        position,
+                    });
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Unknown('"'),
+                        position,
+                    });
+                }
             }
             '+' | '-' | '*' | '(' | ')' | '&' => tokens.push(Token {
                 kind: TokenKind::Operator(c.into()),
