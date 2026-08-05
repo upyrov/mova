@@ -39,6 +39,12 @@ fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
     let pos_before_name = current_position(tokens);
     let name = Rc::new(match tokens.pop().map(|t| t.kind) {
         Some(TokenKind::Identifier(i)) => i,
+        Some(TokenKind::EndOfFile) => {
+            return Err(MovaError::Parser {
+                error: ParserError::ExpectedIdentifierAfterLet,
+                position: pos_before_name,
+            });
+        }
         Some(t) => {
             return Err(MovaError::Parser {
                 error: ParserError::ExpectedIdentifierButGot(format!("{t:?}")),
@@ -63,6 +69,10 @@ fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
                 is_mutable,
             })))
         }
+        Some(TokenKind::EndOfFile) => Err(MovaError::Parser {
+            error: ParserError::ExpectedAssignmentAfterIdentifier,
+            position: pos_before_assignment,
+        }),
         Some(t) => Err(MovaError::Parser {
             error: ParserError::UnexpectedToken(format!("{t:?}")),
             position: pos_before_assignment,
@@ -80,6 +90,12 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
     let pos_before_name = current_position(tokens);
     let name = Rc::new(match tokens.pop().map(|t| t.kind) {
         Some(TokenKind::Identifier(i)) => i,
+        Some(TokenKind::EndOfFile) => {
+            return Err(MovaError::Parser {
+                error: ParserError::ExpectedFunctionName,
+                position: pos_before_name,
+            });
+        }
         _ => {
             return Err(MovaError::Parser {
                 error: ParserError::ExpectedFunctionName,

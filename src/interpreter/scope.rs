@@ -28,7 +28,7 @@ impl Scope {
         self.locals.insert(name.into(), slot);
     }
 
-    /// This ensures that any lingering references to these variables become invalid
+    /// This ensures that any lingering references to these variables become invalid.
     pub fn invalidate(&mut self) {
         self.locals.values().for_each(|slot| {
             let mut data = slot.borrow_mut();
@@ -44,7 +44,9 @@ impl Scope {
 
         match &self.parent {
             Some(p) => p.borrow().find_slot(name),
-            None => Err(MovaError::Runtime(RuntimeError::UnableToResolve(name.to_string()))),
+            None => Err(MovaError::Runtime(RuntimeError::UnableToResolve(
+                name.to_string(),
+            ))),
         }
     }
 
@@ -53,26 +55,32 @@ impl Scope {
         let mut data = slot.borrow_mut();
 
         if let State::Deallocated = data.state {
-            return Err(MovaError::Runtime(RuntimeError::UnableToUseBecauseDeallocated(name.to_string())));
+            return Err(MovaError::Runtime(
+                RuntimeError::UnableToUseBecauseDeallocated(name.to_string()),
+            ));
         }
 
         if matches!(data.state, State::MutablyBorrowed) {
-            return Err(MovaError::Runtime(RuntimeError::UnableToMutateBecauseMutablyBorrowed(name.to_string())));
+            return Err(MovaError::Runtime(
+                RuntimeError::UnableToMutateBecauseMutablyBorrowed(name.to_string()),
+            ));
         }
 
         match &data.value {
-            Value::Number(_) | Value::Boolean(_) => {
-                Ok(data.value.clone())
-            }
+            Value::Number(_) | Value::Boolean(_) => Ok(data.value.clone()),
             Value::Moved => {
-                return Err(MovaError::Runtime(RuntimeError::UnableToUseBecauseMoved(name.to_string())));
+                return Err(MovaError::Runtime(RuntimeError::UnableToUseBecauseMoved(
+                    name.to_string(),
+                )));
             }
             _ => {
                 if matches!(
                     data.state,
                     State::Borrowed(count) if count > 0
                 ) {
-                    return Err(MovaError::Runtime(RuntimeError::UnableToMutateBecauseImmutablyBorrowed(name.to_string())));
+                    return Err(MovaError::Runtime(
+                        RuntimeError::UnableToMutateBecauseImmutablyBorrowed(name.to_string()),
+                    ));
                 }
 
                 Ok(std::mem::replace(&mut data.value, Value::Moved))

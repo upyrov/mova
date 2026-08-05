@@ -40,7 +40,7 @@ pub enum Expression {
 
 fn get_infix_binding_power(operator: &str) -> Option<(u8, u8)> {
     match operator {
-        "==" | "<" | ">" => Some((1, 2)),
+        "==" | "!=" | "<" | ">" | "<=" | ">=" => Some((1, 2)),
         "+" | "-" => Some((3, 4)),
         "*" | "/" => Some((5, 6)),
         _ => None,
@@ -173,6 +173,9 @@ fn parse_binary_expression(tokens: &mut Vec<Token>, binding_power: u8) -> Result
                     let condition = Rc::new(parse_expression(tokens)?);
                     let body = Rc::new(parse_block(tokens)?);
                     Expression::While { condition, body }
+                }
+                Some(TokenKind::EndOfFile) => {
+                    return Err(MovaError::Parser { error: ParserError::UnexpectedEndOfInput, position: pos_pop });
                 }
                 Some(t) => {
                     return Err(MovaError::Parser { error: ParserError::UnexpectedToken(format!("{t:?}")), position: pos_pop });

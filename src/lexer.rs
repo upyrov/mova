@@ -1,4 +1,4 @@
-use crate::error::{MovaError, Position, Result};
+use crate::error::{Position, Result};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
@@ -9,6 +9,8 @@ pub enum TokenKind {
     Operator(String),
     Assignment,
     SpecialCharacter(char),
+    Unknown(char),
+    EndOfFile,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,7 +51,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                         }
                     }
                 } else {
-                    tokens.push(Token { kind: TokenKind::Operator(c.into()), position });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(c.into()),
+                        position,
+                    });
                 }
             }
             'a'..='z' | 'A'..='Z' | '_' => {
@@ -80,8 +85,9 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                             value += &next.to_string()
                         }
                         'a'..='z' | 'A'..='Z' | '_' => {
-                            return Err(MovaError::Lexer {
-                                character: l,
+                            let (_, next) = input.next().unwrap();
+                            tokens.push(Token {
+                                kind: TokenKind::Unknown(next),
                                 position: Position {
                                     line,
                                     character: idx - line_start_index,
@@ -91,26 +97,63 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>> {
                         _ => break,
                     }
                 }
-                tokens.push(Token { kind: TokenKind::Number(value), position });
+                tokens.push(Token {
+                    kind: TokenKind::Number(value),
+                    position,
+                });
             }
-            '+' | '-' | '*' | '(' | ')' | '&' | '<' | '>' => tokens.push(Token { kind: TokenKind::Operator(c.into()), position }),
+            '+' | '-' | '*' | '(' | ')' | '&' => tokens.push(Token {
+                kind: TokenKind::Operator(c.into()),
+                position,
+            }),
+            '<' | '>' | '!' => {
+                if let Some((_, '=')) = input.peek() {
+                    input.next();
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(format!("{c}=")),
+                        position,
+                    });
+                } else {
+                    tokens.push(Token {
+                        kind: TokenKind::Operator(c.into()),
+                        position,
+                    });
+                }
+            }
             '=' => {
                 if let Some((_, '=')) = input.peek() {
                     input.next();
-                    tokens.push(Token { kind: TokenKind::Operator("==".into()), position });
+                    tokens.push(Token {
+                        kind: TokenKind::Operator("==".into()),
+                        position,
+                    });
                 } else {
-                    tokens.push(Token { kind: TokenKind::Assignment, position });
+                    tokens.push(Token {
+                        kind: TokenKind::Assignment,
+                        position,
+                    });
                 }
             }
-            '{' | '}' | ',' | ';' => tokens.push(Token { kind: TokenKind::SpecialCharacter(c), position }),
+            '{' | '}' | ',' | ';' => tokens.push(Token {
+                kind: TokenKind::SpecialCharacter(c),
+                position,
+            }),
             _ => {
-                return Err(MovaError::Lexer {
-                    character: c,
+                tokens.push(Token {
+                    kind: TokenKind::Unknown(c),
                     position,
                 });
             }
         }
     }
+
+    tokens.push(Token {
+        kind: TokenKind::EndOfFile,
+        position: Position {
+            line,
+            character: input.size_hint().1.unwrap_or(0),
+        },
+    });
 
     Ok(tokens)
 }

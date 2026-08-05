@@ -23,7 +23,10 @@ fn evaluate_binary_expression(operator: &str, left: Value, right: Value) -> Resu
         }
         ("<", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l < r)),
         (">", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l > r)),
+        ("<=", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l <= r)),
+        (">=", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l >= r)),
         ("==", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l == r)),
+        ("!=", Value::Number(l), Value::Number(r)) => Ok(Value::Boolean(l != r)),
         (o, l, r) => Err(MovaError::Runtime(RuntimeError::UnexpectedOperator {
             operator: o.to_string(),
             left: format!("{l:?}"),

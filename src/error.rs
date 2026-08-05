@@ -18,7 +18,10 @@ pub enum MovaError {
     #[error("Lexer error at {position}: Unexpected character: '{character}'")]
     Lexer { character: char, position: Position },
     #[error("Parser error at {position}: {error}")]
-    Parser { error: ParserError, position: Position },
+    Parser {
+        error: ParserError,
+        position: Position,
+    },
     #[error("Runtime error: {0}")]
     Runtime(#[from] RuntimeError),
 }
@@ -66,7 +69,11 @@ pub enum RuntimeError {
     #[error("Division by zero")]
     DivisionByZero,
     #[error("Unexpected operator '{operator}' for operands '{left}' and '{right}'")]
-    UnexpectedOperator { operator: String, left: String, right: String },
+    UnexpectedOperator {
+        operator: String,
+        left: String,
+        right: String,
+    },
     #[error("Expected {expected} arguments but received {received}")]
     InvalidArgumentCount { expected: usize, received: usize },
     #[error("Expected expression, but received statement as argument")]

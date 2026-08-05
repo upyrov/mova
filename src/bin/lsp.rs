@@ -1,3 +1,5 @@
+#![cfg(not(target_arch = "wasm32"))]
+
 use dashmap::DashMap;
 use mova::{error::MovaError, lexer::tokenize, parser::node::parse};
 use tower_lsp::jsonrpc::Result;
@@ -41,10 +43,10 @@ impl LanguageServer for Backend {
                 format!("File opened: {}", params.text_document.uri),
             )
             .await;
-        
+
         let uri = params.text_document.uri.to_string();
         let text = params.text_document.text;
-        
+
         self.document_map.insert(uri.clone(), text.clone());
         self.validate_document(params.text_document.uri, text).await;
     }
@@ -53,14 +55,15 @@ impl LanguageServer for Backend {
         if let Some(change) = params.content_changes.into_iter().last() {
             let uri = params.text_document.uri.to_string();
             let text = change.text;
-            
+
             self.document_map.insert(uri.clone(), text.clone());
             self.validate_document(params.text_document.uri, text).await;
         }
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.document_map.remove(&params.text_document.uri.to_string());
+        self.document_map
+            .remove(&params.text_document.uri.to_string());
     }
 }
 
@@ -70,26 +73,36 @@ impl Backend {
 
         match tokenize(&text) {
             Ok(tokens) => {
-                if let Err(MovaError::Parser { error: e, position }) = parse(tokens) {
-                    let pos = Position::new(position.line as u32 - 1, position.character as u32);
-                    diagnostics.push(Diagnostic {
-                        range: Range::new(pos, pos),
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        message: e.to_string(),
-                        ..Default::default()
-                    });
+                for token in &tokens {
+                    if let mova::lexer::TokenKind::Unknown(c) = token.kind {
+                        let pos = Position::new(
+                            token.position.line as u32 - 1,
+                            token.position.character as u32,
+                        );
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(pos, pos),
+                            severity: Some(DiagnosticSeverity::ERROR),
+                            message: format!("Unexpected token found: '{c}'"),
+                            ..Default::default()
+                        });
+                    }
+                }
+
+                let (_, errors) = parse(tokens);
+                for err in errors {
+                    if let MovaError::Parser { error: e, position } = err {
+                        let pos =
+                            Position::new(position.line as u32 - 1, position.character as u32);
+                        diagnostics.push(Diagnostic {
+                            range: Range::new(pos, pos),
+                            severity: Some(DiagnosticSeverity::ERROR),
+                            message: e.to_string(),
+                            ..Default::default()
+                        });
+                    }
                 }
             }
-            Err(MovaError::Lexer { character, position }) => {
-                let pos = Position::new(position.line as u32 - 1, position.character as u32);
-                diagnostics.push(Diagnostic {
-                    range: Range::new(pos, pos),
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    message: format!("Unexpected character: '{character}'"),
-                    ..Default::default()
-                });
-            }
-            _ => {}
+            Err(_) => {}
         }
 
         self.client
@@ -107,6 +120,6 @@ async fn main() {
         client,
         document_map: DashMap::new(),
     });
-    
+
     Server::new(stdin, stdout, socket).serve(service).await;
 }
