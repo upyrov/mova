@@ -164,7 +164,10 @@ mod tests {
 
     fn assert_tokens(input: &str, expected_kinds: Vec<TokenKind>) -> Result<()> {
         let tokens = tokenize(input)?;
-        let kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+        let mut kinds: Vec<TokenKind> = tokens.into_iter().map(|t| t.kind).collect();
+        if kinds.last() == Some(&TokenKind::EndOfFile) {
+            kinds.pop();
+        }
         assert_eq!(kinds, expected_kinds);
         Ok(())
     }

@@ -72,19 +72,7 @@ pub fn check_code(code: &str) -> JsValue {
 #[wasm_bindgen]
 pub fn execute_code(code: &str) -> String {
     match run(code) {
-        Ok(result) => {
-            if let Some(value) = result {
-                match value {
-                    crate::interpreter::Value::Reference(r) => match r.read() {
-                        Ok(guard) => format!("{:?}", guard.value),
-                        Err(e) => format!("{}", e),
-                    },
-                    _ => format!("{:?}", value),
-                }
-            } else {
-                "".to_string()
-            }
-        }
+        Ok(_) => crate::runner::OUTPUT_BUFFER.with(|b| b.borrow().clone()),
         Err(e) => format!("{}", e),
     }
 }

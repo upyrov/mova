@@ -90,14 +90,54 @@ fn evaluate_call(
 
             result
         }
-        _ => Err(MovaError::Runtime(RuntimeError::NotCallable(name.to_string()))),
+        Value::BuiltInFunction { name } => {
+            let evaluated_arguments: Vec<Value> = arguments
+                .iter()
+                .map(|argument| {
+                    let node = Rc::new(Node::Expression(Rc::new(argument.clone())));
+                    let value = evaluate(node, Rc::clone(&scope))?.ok_or(MovaError::Runtime(
+                        RuntimeError::ExpectedExpressionAsArgument,
+                    ))?;
+                    Ok(value)
+                })
+                .collect::<Result<Vec<Value>>>()?;
+
+            match name {
+                "print" | "println" => {
+                    let mut s = String::new();
+                    for (i, arg) in evaluated_arguments.iter().enumerate() {
+                        if i > 0 {
+                            s.push_str(" ");
+                        }
+                        s.push_str(&arg.to_string());
+                    }
+                    if name == "println" {
+                        s.push('\n');
+                    }
+
+                    crate::runner::OUTPUT_BUFFER.with(|b| {
+                        b.borrow_mut().push_str(&s);
+                    });
+
+                    Ok(None)
+                }
+                _ => Err(MovaError::Runtime(RuntimeError::NotCallable(
+                    name.to_string(),
+                ))),
+            }
+        }
+        _ => Err(MovaError::Runtime(RuntimeError::NotCallable(
+            name.to_string(),
+        ))),
     }
 }
 
 fn evaluate_slot(expression: &Expression, scope: Rc<RefCell<Scope>>) -> Result<Slot> {
     match expression {
         Expression::Identifier(name) => scope.borrow().find_slot(name),
-        _ => Err(MovaError::Runtime(RuntimeError::ExpressionCannotBeReferenced)),
+        _ => Err(MovaError::Runtime(
+            RuntimeError::ExpressionCannotBeReferenced,
+        )),
     }
 }
 
@@ -213,10 +253,7 @@ fn evaluate_expression(
                 ),
                 Value::Boolean(false) => {
                     if let Some(alt) = alternative {
-                        evaluate(
-                            Rc::new(Node::Expression(Rc::clone(alt))),
-                            Rc::clone(&scope),
-                        )
+                        evaluate(Rc::new(Node::Expression(Rc::clone(alt))), Rc::clone(&scope))
                     } else {
                         Ok(None)
                     }
@@ -267,9 +304,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::new(Node::Expression(Rc::clone(value))),
                 Rc::clone(&scope),
             )?
-            .ok_or(MovaError::Runtime(
-                RuntimeError::ExpectedExpressionAsValue,
-            ))?;
+            .ok_or(MovaError::Runtime(RuntimeError::ExpectedExpressionAsValue))?;
             scope.borrow_mut().declare(name, value, *is_mutable);
         }
         Statement::Assignment { name, value } => {
@@ -277,9 +312,7 @@ fn evaluate_statement(statement: Rc<Statement>, scope: Rc<RefCell<Scope>>) -> Re
                 Rc::new(Node::Expression(Rc::clone(value))),
                 Rc::clone(&scope),
             )?
-            .ok_or(MovaError::Runtime(
-                RuntimeError::ExpectedExpressionAsValue,
-            ))?;
+            .ok_or(MovaError::Runtime(RuntimeError::ExpectedExpressionAsValue))?;
 
             let slot = scope.borrow().find_slot(name)?;
             let mut data = slot.borrow_mut();

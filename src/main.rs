@@ -2,7 +2,7 @@
 
 use std::{env, fs};
 
-use mova::{interpreter::Value, runner::run};
+use mova::runner::run;
 
 fn main() {
     ctrlc::set_handler(move || std::process::exit(0)).expect("Error setting Ctrl-C handler");
@@ -20,20 +20,10 @@ fn main() {
         };
 
         match run(&input) {
-            Ok(result) => {
-                if let Some(value) = result {
-                    match value {
-                        Value::Reference(r) => match r.read() {
-                            Ok(guard) => {
-                                println!("{:?}", guard.value);
-                            }
-                            Err(e) => {
-                                println!("{e}");
-                            }
-                        },
-                        _ => println!("{value:?}"),
-                    }
-                }
+            Ok(_) => {
+                mova::runner::OUTPUT_BUFFER.with(|b| {
+                    print!("{}", b.borrow());
+                });
             }
             Err(e) => {
                 eprintln!("{e}");
