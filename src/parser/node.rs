@@ -18,7 +18,11 @@ pub fn parse(mut tokens: Vec<Token>) -> (Node, Vec<MovaError>) {
 
     tokens.reverse();
     while tokens.len() != 0 {
-        if let Some(Token { kind: crate::lexer::TokenKind::EndOfFile, .. }) = tokens.last() {
+        if let Some(Token {
+            kind: crate::lexer::TokenKind::EndOfFile,
+            ..
+        }) = tokens.last()
+        {
             tokens.pop();
             break;
         }
@@ -33,8 +37,11 @@ pub fn parse(mut tokens: Vec<Token>) -> (Node, Vec<MovaError>) {
                     }
                     let skipped = tokens.pop().unwrap();
                     errors.push(MovaError::Parser {
-                        error: crate::error::ParserError::UnexpectedToken(format!("{:?}", skipped.kind)),
-                        position: skipped.position
+                        error: crate::error::ParserError::UnexpectedToken(format!(
+                            "{:?}",
+                            skipped.kind
+                        )),
+                        position: skipped.position,
                     });
                 }
             }

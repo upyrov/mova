@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     error::{MovaError, ParserError, Result},
     lexer::{Token, TokenKind},
-    parser::{expression::*, node::Node, current_position},
+    parser::{current_position, expression::*, node::Node},
 };
 
 #[derive(Clone, Debug)]
@@ -31,7 +31,8 @@ pub enum Statement {
 fn parse_variable(tokens: &mut Vec<Token>) -> Result<Node> {
     tokens.pop();
 
-    let is_mutable = matches!(tokens.last(), Some(Token { kind: TokenKind::Keyword(k), .. }) if k == "mut");
+    let is_mutable =
+        matches!(tokens.last(), Some(Token { kind: TokenKind::Keyword(k), .. }) if k == "mut");
     if is_mutable {
         tokens.pop();
     }
@@ -126,7 +127,7 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
                         parameters.push(i);
                     }
                 }
-            },
+            }
             None => {
                 return Err(MovaError::Parser {
                     error: ParserError::ExpectedParameterListToBeClosed,
@@ -150,10 +151,12 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
     let pos_before_assignment = current_position(tokens);
     match tokens.pop().map(|t| t.kind) {
         Some(TokenKind::Assignment) => {}
-        _ => return Err(MovaError::Parser {
-            error: ParserError::ExpectedAssignmentBeforeFunctionBody,
-            position: pos_before_assignment,
-        }),
+        _ => {
+            return Err(MovaError::Parser {
+                error: ParserError::ExpectedAssignmentBeforeFunctionBody,
+                position: pos_before_assignment,
+            });
+        }
     }
 
     Ok(Node::Statement(Rc::new(Statement::Function {
@@ -164,7 +167,11 @@ fn parse_function(tokens: &mut Vec<Token>) -> Result<Node> {
 }
 
 pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
-    while let Some(Token { kind: TokenKind::SpecialCharacter(';'), .. }) = tokens.last() {
+    while let Some(Token {
+        kind: TokenKind::SpecialCharacter(';'),
+        ..
+    }) = tokens.last()
+    {
         tokens.pop();
     }
 
@@ -206,7 +213,11 @@ pub fn parse_statement(tokens: &mut Vec<Token>) -> Result<Node> {
         }),
     }?;
 
-    while let Some(Token { kind: TokenKind::SpecialCharacter(';'), .. }) = tokens.last() {
+    while let Some(Token {
+        kind: TokenKind::SpecialCharacter(';'),
+        ..
+    }) = tokens.last()
+    {
         tokens.pop();
     }
 

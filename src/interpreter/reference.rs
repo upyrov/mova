@@ -25,9 +25,7 @@ impl Reference {
         let mut data = slot.borrow_mut();
 
         if let Value::Moved = data.value {
-            return Err(MovaError::Runtime(
-                RuntimeError::UnableToBorrowBecauseMoved,
-            ));
+            return Err(MovaError::Runtime(RuntimeError::UnableToBorrowBecauseMoved));
         }
 
         match data.state {

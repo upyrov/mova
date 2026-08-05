@@ -16,7 +16,7 @@ pub fn run(input: &str) -> Result<Option<Value>> {
     OUTPUT_BUFFER.with(|b| b.borrow_mut().clear());
 
     let global_scope = Rc::new(RefCell::new(Scope::new(None)));
-    
+
     // Seed built-in functions
     global_scope.borrow_mut().declare(
         &Rc::new("print".to_string()),

@@ -8,5 +8,11 @@ use crate::error::Position;
 use crate::lexer::Token;
 
 pub fn current_position(tokens: &[Token]) -> Position {
-    tokens.last().map(|t| t.position.clone()).unwrap_or(Position { line: 1, character: 0 })
+    tokens
+        .last()
+        .map(|t| t.position.clone())
+        .unwrap_or(Position {
+            line: 1,
+            character: 0,
+        })
 }
